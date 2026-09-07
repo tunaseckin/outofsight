@@ -10,17 +10,16 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Oyuncu yaklastikca tuzaklari sessizce gercek bloga cevirir.
+ * Quietly reverts decoys to the real block as a player approaches.
  *
- * <p>Tuzak yalnizca hileciye gorunmelidir. Tasin icine gomulu oldugu icin mesru
- * oyuncu onu zaten goremez - tek risk, rastgele kazarken tam oraya denk gelip
- * hayalet bir sandik gormesidir. Chunk paketleri 100+ blok mesafeden gonderilir,
- * duzeltme ise bunun cok icinde calisir; aradaki pay kimsenin kazacak kadar
- * yaklasmasina firsat vermez.
+ * <p>A decoy should only ever be visible to a cheat. Sealed in stone it already
+ * is - the one risk is a player digging into one by chance and seeing a phantom
+ * chest. Chunk packets are sent from 100+ blocks away and correction runs well
+ * inside that, leaving no window to reach one.
  *
- * <p>Duzeltme fikirsizdir: tuzak konmus olsun olmasin, aday konumlarin gercek
- * blogu gonderilir. Zaten dogru olan bir blogu tekrar gondermek zararsizdir,
- * bu yuzden hangi tuzagin gercekten konduguna dair defter tutmaya gerek kalmaz.
+ * <p>Correction is deliberately dumb: the real block is sent for every candidate
+ * position whether or not a decoy was planted there. Resending a block that is
+ * already correct is harmless, which removes any need to track what was planted.
  */
 public final class DecoyCorrector {
 
@@ -28,10 +27,10 @@ public final class DecoyCorrector {
     private final DecoyService decoys;
     private final int radiusChunks;
 
-    /** Oyuncu basina duzeltilmis chunk'lar; ayni chunk tekrar tekrar gonderilmesin. */
+    /** Chunks already corrected per player, so none is sent repeatedly. */
     private final Map<UUID, Set<Long>> corrected = new ConcurrentHashMap<>();
 
-    /** Uzun oturumlarda sinirsiz buyumesin diye ust sinir. */
+    /** Upper bound so this cannot grow without limit over a long session. */
     private static final int MAX_TRACKED = 4096;
 
     public DecoyCorrector(Plugin plugin, DecoyService decoys, int radiusChunks) {

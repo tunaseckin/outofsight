@@ -1,8 +1,8 @@
-// Belirli bir chunk'in ham verisini istemci gozuyle inceler.
+// Inspects a chunk's raw data from the client's point of view.
 //
-// Sunucu tarafi denetim, kalkanin degisikligini goremez: paket henuz yeniden
-// serialize edilmemistir. Tek gecerli bakis acisi istemcininki - hilenin
-// gordugu de tam olarak budur.
+// The server-side audit cannot see the shield's changes: the packet has not been
+// re-serialised yet. The only valid vantage point is the client's - which is
+// exactly what a cheat sees.
 
 import mc from 'minecraft-protocol';
 
@@ -23,7 +23,7 @@ function handle(packet) {
 
   const data = packet.chunkData ?? packet;
   const entities = data.blockEntities ?? packet.blockEntities ?? [];
-  console.log(`[probe] chunk ${cx},${cz} alindi, block entity sayisi: ${entities.length}`);
+  console.log(`[probe] chunk ${cx},${cz} received, block entities: ${entities.length}`);
 
   const localX = ((bx % 16) + 16) % 16;
   const localZ = ((bz % 16) + 16) % 16;
@@ -35,12 +35,12 @@ function handle(packet) {
   });
 
   if (hit) {
-    console.log(`[probe] SIZDI - hedef konumda block entity var:`,
+    console.log(`[probe] LEAKED - block entity present at target:`,
       JSON.stringify({ x: hit.x, y: hit.y, z: hit.z, type: hit.type }));
   } else {
-    console.log(`[probe] GIZLENDI - hedef konumda block entity yok`);
+    console.log(`[probe] HIDDEN - no block entity at target`);
     if (entities.length) {
-      console.log('[probe] ornek kayit:', JSON.stringify(entities[0]).slice(0, 160));
+      console.log('[probe] sample record:', JSON.stringify(entities[0]).slice(0, 160));
     }
   }
   setTimeout(() => { client.end(); process.exit(0); }, 300);
@@ -48,8 +48,8 @@ function handle(packet) {
 
 client.on('level_chunk_with_light', handle);
 client.on('map_chunk', handle);
-client.on('error', (e) => { console.error('[probe] hata:', e.message); process.exit(1); });
+client.on('error', (e) => { console.error('[probe] error:', e.message); process.exit(1); });
 setTimeout(() => {
-  console.error(`[probe] chunk ${cx},${cz} hic gelmedi`);
+  console.error(`[probe] chunk ${cx},${cz} never arrived`);
   process.exit(1);
 }, 20000);

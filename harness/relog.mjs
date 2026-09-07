@@ -1,9 +1,9 @@
-// Yerel test sunucusuna baglanip chunk paketlerini alan bassiz istemci.
+// Headless client that connects to the local test server and receives chunks.
 //
-// Amaci dogrulamayi tekrarlanabilir kilmak: sunucu chunk'i ancak bir istemci
-// bagliyken gonderir, dolayisiyla her test turu bir "cik-gir" gerektirir. Bunu
-// elle yapmak dogrulamayi insan hizina baglar. Bot sadece baglanir, chunk'lari
-// bekler ve cikar - denetimi sunucudaki eklenti yapar.
+// Its purpose is repeatable verification: the server only sends a chunk while a
+// client is connected, so every test round needs a relog. Doing that by hand
+// ties verification to human speed. The bot just connects, waits for chunks and
+// leaves - the plugin does the auditing.
 
 import mc from 'minecraft-protocol';
 
@@ -30,38 +30,38 @@ client.on('map_chunk', () => { chunks++; });
 
 client.on('login', () => {
   spawned = true;
-  console.log(`[bot] giris yapildi (${USERNAME})`);
+  console.log(`[bot] logged in (${USERNAME})`);
   if (COMMAND) {
     setTimeout(() => {
-      console.log(`[bot] komut: /${COMMAND}`);
+      console.log(`[bot] command: /${COMMAND}`);
       client.write('chat_command', { command: COMMAND });
     }, 1500);
   }
   setTimeout(() => {
-    console.log(`[bot] ${chunks} chunk paketi alindi, cikiliyor`);
+    console.log(`[bot] ${chunks} chunk packets received, leaving`);
     client.end();
     process.exit(0);
   }, WAIT_MS);
 });
 
 client.on('kick_disconnect', (p) => {
-  console.error('[bot] sunucu attı:', JSON.stringify(p).slice(0, 300));
+  console.error('[bot] kicked by server:', JSON.stringify(p).slice(0, 300));
   process.exit(1);
 });
 
 client.on('error', (err) => {
-  console.error('[bot] hata:', err.message);
+  console.error('[bot] error:', err.message);
   process.exit(1);
 });
 
 client.on('end', (reason) => {
   if (!spawned) {
-    console.error('[bot] giris yapilamadan koptu:', reason);
+    console.error('[bot] disconnected before login:', reason);
     process.exit(1);
   }
 });
 
 setTimeout(() => {
-  console.error('[bot] zaman asimi - giris yapilamadi');
+  console.error('[bot] timed out before login');
   process.exit(1);
 }, WAIT_MS + 20000);

@@ -18,19 +18,17 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Tamamen gomulu sandik ve spawner'larin konumunu giden chunk paketinden siler.
+ * Removes fully buried containers from outgoing chunk packets.
  *
- * <p>Olculen acik buydu: Paper'in anti-xray'i cevherleri obfuscate ederken block
- * entity'si olan bloklara hic dokunmaz. Sandigin NBT'si ayri bir listede gider;
- * blok state'i karartilip liste birakilsaydi istemci desenkron olurdu, bu yuzden
- * Paper ikisini de oldugu gibi gonderir. Us bulma tam olarak bu boslukta calisir.
+ * <p>This was the measured gap: Paper's anti-xray obfuscates ores but never
+ * touches blocks that carry a block entity. A chest's NBT travels in a separate
+ * list; obfuscating the block state while leaving that list would desync the
+ * client, so Paper sends both verbatim. Base finding lives in exactly that gap.
  *
- * <p>Iki kanali birlikte kapatmak sart: sadece listeyi silmek yetmez, cunku
- * block entity'siz bir {@code chest} blogu istemcide yine sandik olarak cizilir.
- * Sadece blogu degistirmek de yetmez, cunku hile ham paketteki listeyi okur.
- *
- * <p>Gomululuk karari paketin <em>kendi</em> verisinden verilir - dunyaya
- * erisim gerekmez, dolayisiyla ag is parcaciginda guvenlidir.
+ * <p>Closing both channels together is required: dropping only the list is not
+ * enough, because a {@code chest} block with no block entity still renders as a
+ * chest, and changing only the block is not enough either, because a cheat reads
+ * the raw list.
  */
 public final class BlockEntityShield extends PacketListenerAbstract {
 
@@ -40,11 +38,11 @@ public final class BlockEntityShield extends PacketListenerAbstract {
     private final DecoyService decoys;
     private final AtomicBoolean warnedBiome = new AtomicBoolean();
 
-    /** A/B testi icin acilip kapanabilir; varsayilan kapali. */
+    /** Toggleable for A/B testing; off by default. */
     private volatile boolean enabled;
 
-    // Olcum: kalkan ag is parcaciklarinda calisir, yani bu sure TPS'e degil
-    // ag gecikmesine yansir. Ana is parcacigi maliyeti taramada olculur.
+    // Measurement: the shield runs on network threads, so this time shows up as
+    // latency rather than TPS. Main-thread cost is measured in the sweep.
     private final java.util.concurrent.atomic.AtomicLong packets =
             new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong nanos =
@@ -58,8 +56,8 @@ public final class BlockEntityShield extends PacketListenerAbstract {
         long p = packets.get();
         long n = nanos.get();
         return String.format(java.util.Locale.ROOT,
-                "kalkan(ag): %d chunk paketi, %d degistirildi, %d tuzak kondu, "
-                        + "ortalama %.1f us/paket",
+                "shield(net): %d chunk packets, %d modified, %d decoys planted, "
+                        + "%.1f us/packet average",
                 p, modified.get(), planted.get(), p == 0 ? 0.0 : n / 1000.0 / p);
     }
 
@@ -110,20 +108,20 @@ public final class BlockEntityShield extends PacketListenerAbstract {
             tiles = new TileEntity[0];
         }
         boolean anythingToHide = index.hasChunk(column.getX(), column.getZ());
-        // Bos bir chunk'tan cikmak, tuzak konacak yerlerin cogunu kaciriyordu:
-        // chunk'larin buyuk cogunlugunda hic block entity yoktur ve tuzak asil
-        // oralara konmalidir.
+        // Returning early on an empty chunk missed most decoy sites: the vast
+        // majority of chunks hold no block entity at all, and that is exactly
+        // where decoys belong.
         boolean carriesDecoys = decoys.carriesDecoys(column.getX(), column.getZ());
         if (tiles.length == 0 && !anythingToHide && !carriesDecoys) {
             return;
         }
 
-        // Biome verisi tasiyan kolonu yeniden insa edersek onu kaybederiz.
-        // Boyle bir pakette hicbir sey yapmamak, bozuk chunk gondermekten iyidir.
+        // Rebuilding a column that carries biome data would lose it. Doing
+        // nothing to such a packet beats sending a corrupt chunk.
         if (column.hasBiomeData()) {
             if (warnedBiome.compareAndSet(false, true)) {
                 plugin.getLogger().warning(
-                        "Kolon biome verisi tasiyor - kalkan bu paketlere dokunmuyor.");
+                        "Column carries biome data - the shield leaves these packets alone.");
             }
             return;
         }
@@ -139,8 +137,8 @@ public final class BlockEntityShield extends PacketListenerAbstract {
             int lz = tile.getZ() & 0xF;
             int y = tile.getY();
 
-            // Tipi gizlemeden ONCE ogren: yakindaki sandiklarin hepsi gizliyse
-            // "gizlemedigimizden ogren" mantigi hicbir zaman calismaz.
+            // Learn the type BEFORE hiding: if every nearby chest is hidden,
+            // learning only from ones we keep would never run.
             WrappedBlockState existing = stateAt(sections, lx, y, lz);
             if (existing != null && existing.getType() == StateTypes.CHEST) {
                 decoys.learnChestType(tile.getType());
@@ -173,7 +171,7 @@ public final class BlockEntityShield extends PacketListenerAbstract {
             planted.incrementAndGet();
         }
 
-        // Kolon bir kez, her sey hazir olduktan sonra kurulur.
+        // The column is rebuilt once, after everything else is settled.
         Column rebuilt = rebuild(column, keep.toArray(new TileEntity[0]));
         if (rebuilt == null) {
             return;
@@ -184,11 +182,11 @@ public final class BlockEntityShield extends PacketListenerAbstract {
     }
 
     /**
-     * Tuzaklarin konacagi gecerli konumlari secer.
+     * Picks valid positions for decoys.
      *
-     * <p>Aday ancak tamamen gomulu, kati bir blokta ise kullanilir: acikta duran
-     * bir tuzak mesru oyuncuya da gorunur, ki bu savunmanin dayandigi asimetriyi
-     * bozar.
+     * <p>A candidate is used only if it sits in a fully buried solid block: an
+     * exposed decoy would be visible to legitimate players too, which breaks the
+     * asymmetry the defence rests on.
      */
     private List<int[]> planDecoys(BaseChunk[] sections, int chunkX, int chunkZ) {
         if (!decoys.ready() || !decoys.carriesDecoys(chunkX, chunkZ)) {
@@ -206,7 +204,7 @@ public final class BlockEntityShield extends PacketListenerAbstract {
         return chosen;
     }
 
-    /** Konum ve alti komsusu da kati mi? Paketin kendi verisinden bakilir. */
+    /** Is the position and all six neighbours solid? Read from the packet itself. */
     private boolean buriedSolid(BaseChunk[] sections, int lx, int y, int lz) {
         int[][] offsets = {{0, 0, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 1, 0},
                 {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
@@ -223,7 +221,7 @@ public final class BlockEntityShield extends PacketListenerAbstract {
         return true;
     }
 
-    /** Yerine konacak blok: ustundeki komsu. Cevresiyle ayni tasi/derin tasi verir. */
+    /** Replacement block: the neighbour above, matching the surrounding stone. */
     private WrappedBlockState fillerFor(BaseChunk[] sections, int lx, int y, int lz) {
         WrappedBlockState above = stateAt(sections, lx, y + 1, lz);
         return above != null ? above : stateAt(sections, lx, y - 1, lz);
@@ -245,11 +243,11 @@ public final class BlockEntityShield extends PacketListenerAbstract {
     }
 
     /**
-     * Kolonu ayni verilerle, farkli bir block entity listesiyle yeniden kurar.
+     * Rebuilds the column with the same data but a different block entity list.
      *
-     * <p>{@code tileEntities} alani {@code final} oldugu icin yerinde
-     * degistirilemez. Hangi heightmap bicimi tasindigi surume gore degisir;
-     * ikisini de taniyamazsak {@code null} donup pakete dokunmuyoruz.
+     * <p>The {@code tileEntities} field is {@code final} and cannot be replaced
+     * in place. Which heightmap form a column carries varies by version; if
+     * neither is recognised this returns {@code null} and the packet is left alone.
      */
     private Column rebuild(Column c, TileEntity[] tiles) {
         try {
@@ -259,7 +257,7 @@ public final class BlockEntityShield extends PacketListenerAbstract {
                         heightmaps);
             }
         } catch (RuntimeException ignored) {
-            // Bu surumde harita bicimi farkli - asagidaki yola dus.
+            // A different heightmap form on this version - fall through.
         }
         try {
             if (c.hasHeightMaps()) {
@@ -267,7 +265,7 @@ public final class BlockEntityShield extends PacketListenerAbstract {
                         c.getHeightMaps());
             }
         } catch (RuntimeException ignored) {
-            // Yok sayilir.
+            // Ignored.
         }
         return new Column(c.getX(), c.getZ(), c.isFullChunk(), c.getChunks(), tiles);
     }

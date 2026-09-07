@@ -24,25 +24,25 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Sunucudan giden chunk paketlerini, dunyanin gercek icerigiyle karsilastirir.
+ * Compares outgoing chunk packets against the world's real contents.
  *
- * <p>Bu bir <em>tespit</em> degil, bir <em>denetim</em>. X-ray ve Block ESP gibi
- * bilgi hileleri oyuncuya fizik kurali cignetmez: sunucu cevherin yerini zaten
- * gondermistir, hile onu ekrana cizer. Paket akisinda anormal hicbir sey yoktur,
- * dolayisiyla bu hileler tespit edilemez. Tek gercek savunma veriyi hic
- * gondermemektir - ve bu sinif gonderilip gonderilmedigini olcer.
+ * <p>This is an <em>audit</em>, not a detector. Information cheats such as X-ray
+ * and Block ESP break no rule of physics: the server already sent the ore's
+ * position and the cheat merely draws it. Nothing in the packet stream is
+ * anomalous, so these cheats cannot be detected. The only real defence is not
+ * sending the data - and this class measures whether it was sent.
  *
- * <p>Paket iki ayri kanal tasir ve <em>ikisi de</em> denetlenmelidir:
+ * <p>A packet carries two separate channels and <em>both</em> must be audited:
  * <ul>
- *   <li>Blok state'leri - anti-xray'in obfuscate ettigi yer.</li>
- *   <li>Block entity listesi - sandik ve spawner gibi bloklar konumlarini
- *       burada <em>ayrica</em> bildirir. Blok verisi gizlense bile bu liste
- *       acikta kalabilir, o yuzden ayri sayilir.</li>
+ *   <li>Block states - what anti-xray obfuscates.</li>
+ *   <li>The block entity list - chests and spawners report their positions here
+ *       <em>as well</em>. Even with the block data hidden this list can stay
+ *       exposed, so it is counted separately.</li>
  * </ul>
  */
 public final class XrayAudit extends PacketListenerAbstract {
 
-    /** Us bulmanin ve X-ray'in hedefledigi bloklar. */
+    /** Blocks targeted by base finding and X-ray. */
     private static final Set<String> SENSITIVE = Set.of(
             "diamond_ore", "deepslate_diamond_ore",
             "emerald_ore", "deepslate_emerald_ore",
@@ -54,21 +54,21 @@ public final class XrayAudit extends PacketListenerAbstract {
             "chest", "trapped_chest", "ender_chest", "barrel",
             "spawner", "budding_amethyst");
 
-    /** Bunlarin konumu block entity listesinde de gecer. */
+    /** These also report their position in the block entity list. */
     private static final Set<String> BLOCK_ENTITIES = Set.of(
             "chest", "trapped_chest", "ender_chest", "barrel", "spawner");
 
-    /** Anti-xray'in ust sinirina denk gelir; ustunu taramanin anlami yok. */
+    /** Matches anti-xray's upper bound; scanning above it is pointless. */
     private final int maxScanY;
 
     private final Plugin plugin;
     private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
     /**
-     * Oyuncuya degil <em>konuma</em> bagli gozcu.
+     * A watch bound to a <em>position</em> rather than a player.
      *
-     * <p>Kime gonderilirse gonderilsin ayni chunk denetlenir, ve tek seferlik
-     * degildir. Boylece dogrulama, bir insanin cik-gir yapmasini beklemeden
-     * bassiz bir test istemcisiyle tekrarlanabilir.
+     * <p>The same chunk is audited whoever it is sent to, and not just once, so
+     * verification can be repeated with a headless test client instead of
+     * waiting for a person to relog.
      */
     private volatile Watch globalWatch;
 
@@ -88,12 +88,12 @@ public final class XrayAudit extends PacketListenerAbstract {
     }
 
     /**
-     * Tek bir konumu gozler ve o chunk gonderildiginde raporlar.
+     * Watches one position and reports when that chunk is sent.
      *
-     * <p>Ornekleme tabanli denetim sirali bir yaris iceriyor: chunk yagmuru
-     * denetim acilmadan once biterse hedef chunk ornege hic girmez. Gozcu bunu
-     * ortadan kaldirir - hangi sirada gelirse gelsin dogru chunk yakalanir.
-     * Cikis yapinca silinmez, cunku testin geregi cik-gir yapmaktir.
+     * <p>Sampling-based auditing contains a race: if the chunk burst finishes
+     * before the audit is started, the target chunk never enters the sample. A
+     * watch removes that - the right chunk is caught whatever the order. It
+     * survives disconnect, because the test requires relogging.
      */
     public void watch(org.bukkit.World world, java.util.List<WatchPos> positions) {
         WatchPos first = positions.get(0);
@@ -104,7 +104,7 @@ public final class XrayAudit extends PacketListenerAbstract {
         globalWatch = null;
     }
 
-    /** Gozlenen tek konum: beklenen blok adi ve rapor etiketi. */
+    /** One watched position: expected block name and report label. */
     public record WatchPos(int x, int y, int z, String expected, String label) {
     }
 
@@ -127,8 +127,8 @@ public final class XrayAudit extends PacketListenerAbstract {
             return;
         }
 
-        // Paketi ag is parcaciginda cozmek zorundayiz - tampon yalnizca burada
-        // gecerli. Cozulmus veri sonrasinda guvenle tasinabilir.
+        // The packet must be decoded on the network thread - the buffer is only
+        // valid here. The decoded data can be handed off safely afterwards.
         Column column = new WrapperPlayServerChunkData(event).getColumn();
         int chunkX = column.getX();
         int chunkZ = column.getZ();
@@ -147,7 +147,7 @@ public final class XrayAudit extends PacketListenerAbstract {
                 id, chunkX, chunkZ, packetBlocks, packetTileEntities, session));
     }
 
-    /** Pakette gorunen hassas bloklarin konumlarini ve turlerini toplar. */
+    /** Collects the positions and types of sensitive blocks visible in the packet. */
     private Map<Long, String> scanPacket(Column column, int minY) {
         Map<Long, String> found = new HashMap<>();
         BaseChunk[] sections = column.getChunks();
@@ -184,10 +184,10 @@ public final class XrayAudit extends PacketListenerAbstract {
     }
 
     /**
-     * Paketin block entity listesindeki konumlar.
+     * Positions in the packet's block entity list.
      *
-     * <p>Bu liste blok obfuscation'indan bagimsizdir: sandigin blogu taşa
-     * cevrilse bile, burada bir kayit kalirsa konum yine ele verilmis olur.
+     * <p>This list is independent of block obfuscation: even with the chest's
+     * block turned to stone, a record left here still gives the position away.
      */
     private Set<Long> scanTileEntities(Column column) {
         Set<Long> positions = new HashSet<>();
@@ -243,9 +243,9 @@ public final class XrayAudit extends PacketListenerAbstract {
                     long k = key(x, y, z);
                     realPositions.add(k);
 
-                    // Block entity kanali: blok gizlense bile konum burada sizabilir.
-                    // Tamamen gomulu bir sandik, oyuncunun gizledigi us demektir -
-                    // us bulmanin calisip calismadigi tam olarak bu sayida gorulur.
+                    // The block entity channel: the position can leak here even
+                    // with the block hidden. A fully buried chest is a hidden
+                    // base, so this count is exactly what base finding relies on.
                     if (BLOCK_ENTITIES.contains(name)) {
                         tileReal++;
                         if (packetTileEntities.contains(k)) {
@@ -260,16 +260,16 @@ public final class XrayAudit extends PacketListenerAbstract {
 
                     String packetName = packetBlocks.get(k);
                     if (packetName == null) {
-                        continue; // Pakette hassas blok yok - gizlenmis.
+                        continue; // No sensitive block in the packet - hidden.
                     }
                     if (!packetName.equals(name)) {
-                        // Yerinde baska bir cevher gorunuyor: obfuscation calismis.
+                        // A different ore shows in its place: obfuscation worked.
                         wrongType++;
                         continue;
                     }
                     leaked++;
-                    // Acikta duran blogu gizlemek dunyayi bozardi: oyuncu onu zaten
-                    // gozuyle gorur. Asil sorun, tamamen gomulu oldugu halde sizan blok.
+                    // Hiding an exposed block would break the world: the player
+                    // can already see it. The real problem is a buried leak.
                     if (isExposed(world, (chunkX << 4) + x, y, (chunkZ << 4) + z)) {
                         leakedExposed++;
                     } else {
@@ -280,7 +280,7 @@ public final class XrayAudit extends PacketListenerAbstract {
             }
         }
 
-        // Sahte: pakette hassas blok var ama dunyada yok - anti-xray'in gurultusu.
+        // Fake: sensitive in the packet but not in the world - anti-xray noise.
         int fake = 0;
         for (long pos : packetBlocks.keySet()) {
             if (!realPositions.contains(pos)) {
@@ -297,7 +297,7 @@ public final class XrayAudit extends PacketListenerAbstract {
         }
     }
 
-    /** Gozlenen konumlarin iki kanalda da sizip sizmadigini bildirir. */
+    /** Reports whether the watched positions leak on either channel. */
     private void reportWatch(UUID playerId, Watch watch, Column column) {
         BaseChunk[] sections = column.getChunks();
         Set<Long> tiles = scanTileEntities(column);
@@ -307,7 +307,7 @@ public final class XrayAudit extends PacketListenerAbstract {
         for (WatchPos pos : watch.positions()) {
             int localX = pos.x() & 0xF;
             int localZ = pos.z() & 0xF;
-            String seen = "(bolum yok)";
+            String seen = "(no section)";
             int index = (pos.y() - watch.minY()) >> 4;
             if (index >= 0 && index < sections.length && sections[index] != null) {
                 WrappedBlockState state = sections[index].get(localX, pos.y() & 0xF, localZ);
@@ -318,31 +318,31 @@ public final class XrayAudit extends PacketListenerAbstract {
             boolean blockLeak = pos.expected().equals(seen);
             boolean tileLeak = tiles.contains(key(localX, pos.y(), localZ));
 
-            plain.add(String.format(Locale.ROOT, "%s [%d,%d,%d] blok=%s(%s) block-entity=%s",
+            plain.add(String.format(Locale.ROOT, "%s [%d,%d,%d] block=%s(%s) block-entity=%s",
                     pos.label(), pos.x(), pos.y(), pos.z(),
-                    blockLeak ? "SIZDI" : "gizlendi", seen,
-                    tileLeak ? "SIZDI" : "yok"));
-            lines.add("§7" + pos.label() + ": blok "
-                    + (blockLeak ? "§cSIZDI" : "§agizlendi")
-                    + " §7(pakette: §f" + seen + "§7)"
-                    + (tileLeak ? "  §7block-entity §cSIZDI" : ""));
+                    blockLeak ? "LEAKED" : "hidden", seen,
+                    tileLeak ? "LEAKED" : "none"));
+            lines.add("§7" + pos.label() + ": block "
+                    + (blockLeak ? "§cLEAKED" : "§ahidden")
+                    + " §7(in packet: §f" + seen + "§7)"
+                    + (tileLeak ? "  §7block-entity §cLEAKED" : ""));
         }
 
         plugin.getServer().getScheduler().runTask(plugin, () -> {
             Player player = plugin.getServer().getPlayer(playerId);
             String who = player != null ? player.getName() : playerId.toString().substring(0, 8);
-            plugin.getLogger().info("gizli us testi [" + who + "] | " + String.join(" | ", plain));
+            plugin.getLogger().info("hidden base test [" + who + "] | " + String.join(" | ", plain));
             if (player == null) {
                 return;
             }
             player.sendMessage("§8§m                                        ");
-            player.sendMessage("§b§lGizli us testi §7(ayni kabuk, iki blok turu)");
+            player.sendMessage("§b§lHidden base test §7(same shell, two block types)");
             lines.forEach(player::sendMessage);
             player.sendMessage("§8§m                                        ");
         });
     }
 
-    /** Blogun alti komsusundan biri gorusu kesmiyorsa blok aciktadir. */
+    /** A block is exposed when any of its six neighbours does not block sight. */
     private static boolean isExposed(World world, int x, int y, int z) {
         int minY = world.getMinHeight();
         int maxY = world.getMaxHeight() - 1;
@@ -365,7 +365,7 @@ public final class XrayAudit extends PacketListenerAbstract {
         return bare.toLowerCase(Locale.ROOT);
     }
 
-    /** Chunk-yerel (x,z) 0..15, y ise dunya koordinati. */
+    /** Chunk-local (x,z) in 0..15; y is a world coordinate. */
     private static long key(int x, int y, int z) {
         return ((long) (x & 0xF) << 40) | ((long) (z & 0xF) << 36) | ((y + 2048) & 0xFFFFFFFFL);
     }
@@ -426,26 +426,26 @@ public final class XrayAudit extends PacketListenerAbstract {
                     .limit(8)
                     .map(e -> e.getKey() + "=" + e.getValue())
                     .reduce((a, b) -> a + ", " + b)
-                    .orElse("yok");
+                    .orElse("none");
         }
 
         synchronized String summary(String playerName) {
             String verdict;
             if (realTotal == 0) {
-                verdict = "hassas blok yok";
+                verdict = "no sensitive blocks";
             } else if (leakedTotal == 0) {
-                verdict = "TUR-ESLESEN SIZINTI YOK";
+                verdict = "NO TYPE-MATCHED LEAK";
             } else {
-                verdict = String.format(Locale.ROOT, "sizinti %.1f%%",
+                verdict = String.format(Locale.ROOT, "leak %.1f%%",
                         100.0 * leakedTotal / realTotal);
             }
             int seen = fakeTotal + wrongTypeTotal + leakedTotal;
             double signal = seen == 0 ? 0 : 100.0 * leakedTotal / seen;
             return String.format(Locale.ROOT,
-                    "xray denetimi [%s] %d chunk: gercek=%d TUR-ESLESEN=%d (acikta=%d gomulu=%d) "
-                            + "yanlis-tur=%d sahte=%d | block-entity: gercek=%d sizan=%d "
-                            + "(acikta=%d GOMULU=%d) -> %s | sinyal/gurultu=%.2f%% | "
-                            + "gomulu dagilimi: %s",
+                    "xray audit [%s] %d chunks: real=%d TYPE-MATCHED=%d (exposed=%d buried=%d) "
+                            + "wrong-type=%d fake=%d | block-entity: real=%d leaked=%d "
+                            + "(exposed=%d BURIED=%d) -> %s | signal/noise=%.2f%% | "
+                            + "buried by type: %s",
                     playerName, chunks, realTotal, leakedTotal, exposedTotal, buriedTotal,
                     wrongTypeTotal, fakeTotal, tileRealTotal, tileLeakTotal, tileExposedTotal,
                     tileBuriedTotal, verdict, signal, topBuriedTypes());
@@ -453,24 +453,24 @@ public final class XrayAudit extends PacketListenerAbstract {
 
         synchronized void report(Player player) {
             player.sendMessage("§8§m                                        ");
-            player.sendMessage("§b§lX-ray sizinti denetimi §7(" + chunks + " chunk)");
-            player.sendMessage("§7Dunyadaki gercek hassas blok: §f" + realTotal);
-            player.sendMessage("§7Tur eslesen sizinti:          "
+            player.sendMessage("§b§lX-ray leak audit §7(" + chunks + " chunks)");
+            player.sendMessage("§7Sensitive blocks in world:   §f" + realTotal);
+            player.sendMessage("§7Type-matched leak:           "
                     + (leakedTotal == 0 ? "§a0" : "§c" + leakedTotal));
-            player.sendMessage("§7  · acikta (kacinilmaz):      §f" + exposedTotal);
-            player.sendMessage("§7  · gomulu:                   §f" + buriedTotal);
-            player.sendMessage("§7Yanlis tur (obfuscate):       §f" + wrongTypeTotal);
-            player.sendMessage("§7Sahte (gurultu):              §f" + fakeTotal);
-            player.sendMessage("§7Block entity (sandik/spawner): §f" + tileRealTotal
-                    + " §7adet, sizan: §f" + tileLeakTotal);
-            player.sendMessage("§7  · acikta (kacinilmaz):      §f" + tileExposedTotal);
-            player.sendMessage("§7  · GOMULU (gizli us):        "
+            player.sendMessage("§7  · exposed (unavoidable):   §f" + exposedTotal);
+            player.sendMessage("§7  · buried:                  §f" + buriedTotal);
+            player.sendMessage("§7Wrong type (obfuscated):     §f" + wrongTypeTotal);
+            player.sendMessage("§7Fake (noise):                §f" + fakeTotal);
+            player.sendMessage("§7Block entities (chest/spawner): §f" + tileRealTotal
+                    + "§7, leaked: §f" + tileLeakTotal);
+            player.sendMessage("§7  · exposed (unavoidable):   §f" + tileExposedTotal);
+            player.sendMessage("§7  · BURIED (hidden base):    "
                     + (tileBuriedTotal == 0 ? "§a0" : "§c" + tileBuriedTotal));
 
             int seen = fakeTotal + wrongTypeTotal + leakedTotal;
             if (seen > 0) {
                 player.sendMessage(String.format(Locale.ROOT,
-                        "§7X-ray'in gordugu cevherin §f%.2f%%§7'i gercek",
+                        "§f%.2f%%§7 of the ore an X-ray sees is real",
                         100.0 * leakedTotal / seen));
             }
             player.sendMessage("§8§m                                        ");

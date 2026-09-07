@@ -24,13 +24,13 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * Dizini gunceller ve blok acildiginda sandigi ortaya cikarir.
+ * Keeps the index current and reveals a container once it becomes visible.
  *
- * <p>Gizlemek tek basina yeterli degil: oyuncu duvari kirip sandiga ulastiginda
- * sunucu yalnizca kirilan blogun guncellemesini gonderir, sandik istemcide tas
- * olarak kalir ve oyuncu kendi sandigini goremez. Bu yuzden bir blok her
- * degistiginde komsulari yeniden degerlendirilir; artik gorunur olan konum
- * dizinden dusurulur ve yakindaki oyunculara gercek blok gonderilir.
+ * <p>Hiding alone is not enough: when a player digs through to a chest the
+ * server only sends an update for the broken block, so the chest stays stone on
+ * the client and the player cannot see their own container. Every block change
+ * therefore re-evaluates its neighbours; a position that became visible is
+ * dropped from the index and the real block is sent to nearby players.
  */
 public final class ShieldIndexer implements Listener {
 
@@ -43,19 +43,18 @@ public final class ShieldIndexer implements Listener {
     private final HiddenIndex index;
 
     /**
-     * Gizlenecek blok turleri.
+     * Block types to hide.
      *
-     * <p>Bir us sandiktan ibaret degil: firin, huni ve isaret feneri de en az
-     * sandik kadar acik bir "burada biri yasiyor" isaretidir. Liste
-     * yapilandirmadan gelir, cunku hangi bloklarin ele verici sayilacagi
-     * sunucunun oyun tarzina gore degisir.
+     * <p>A base is not only chests: a furnace, a hopper or a beacon says
+     * "someone lives here" just as plainly. The list comes from configuration,
+     * because which blocks count as revealing depends on how a server plays.
      */
     private final Set<org.bukkit.Material> protectedTypes;
 
-    /** Ortaya cikan blogun gonderilecegi azami mesafe (blok). */
+    /** Maximum distance, in blocks, a reveal is sent to. */
     private final double revealRange;
 
-    /** Guvenlik agi taramasinin oyuncu cevresinde kapsadigi chunk yaricapi. */
+    /** Chunk radius around a player covered by the safety-net sweep. */
     private final int sweepRadius;
 
     public ShieldIndexer(Plugin plugin, HiddenIndex index, double revealRange, int sweepRadius,
@@ -67,7 +66,7 @@ public final class ShieldIndexer implements Listener {
         this.sweepRadius = sweepRadius;
     }
 
-    /** Eklenti acildiginda halihazirda yuklu chunk'lari tarar. */
+    /** Scans chunks that are already loaded when the plugin starts. */
     public void indexLoadedChunks() {
         int chunks = 0;
         for (World world : plugin.getServer().getWorlds()) {
@@ -76,14 +75,14 @@ public final class ShieldIndexer implements Listener {
                 chunks++;
             }
         }
-        plugin.getLogger().info("kalkan dizini: " + chunks + " chunk tarandi, "
-                + index.size() + " gomulu block entity");
+        plugin.getLogger().info("shield index: scanned " + chunks + " chunks, "
+                + index.size() + " buried block entities");
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onChunkLoad(ChunkLoadEvent event) {
         indexChunk(event.getChunk());
-        // Kenardaki bloklarin komsulari bu chunk'ta olabilir; komsulari da tazele.
+        // Blocks on a border may have neighbours in this chunk; refresh those too.
         World world = event.getWorld();
         int cx = event.getChunk().getX();
         int cz = event.getChunk().getZ();
@@ -120,24 +119,24 @@ public final class ShieldIndexer implements Listener {
     }
 
     /**
-     * Oyunculara yakin gizli kayitlari periyodik olarak yeniden degerlendirir.
+     * Periodically re-evaluates hidden entries near players.
      *
-     * <p>Olaylar her degisikligi yakalayamaz: komutla, eklentiyle, WorldEdit ile,
-     * pistonla ya da akan suyla acilan bir sandik hicbir {@code BlockBreakEvent}
-     * uretmez. Yanlislikla gizli kalan bir sandik oyuncunun esyasini kaybetmesi
-     * demek oldugu icin, olaya ek olarak bir guvenlik agi gerekir: kayit sayisi
-     * kucuk oldugundan bu tarama ucuzdur.
+     * <p>Events cannot catch every change: a chest opened by a command, a plugin,
+     * WorldEdit, a piston or flowing water produces no {@code BlockBreakEvent}.
+     * A chest left hidden by mistake means a player loses their items, so a
+     * safety net is needed alongside events. The entry count is small, which
+     * makes this sweep cheap.
      */
     private final java.util.concurrent.atomic.AtomicLong sweeps =
             new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong sweepNanos =
             new java.util.concurrent.atomic.AtomicLong();
 
-    /** Ana is parcaciginda gecen sure - TPS'i etkileyen kisim budur. */
+    /** Time spent on the main thread - this is the part that affects TPS. */
     public String stats() {
         long n = sweeps.get();
         return String.format(java.util.Locale.ROOT,
-                "tarama(ana): %d tur, ortalama %.2f ms/tur, dizinde %d kayit",
+                "sweep(main): %d runs, %.2f ms/run average, %d entries indexed",
                 n, n == 0 ? 0.0 : sweepNanos.get() / 1_000_000.0 / n, index.size());
     }
 
@@ -180,7 +179,7 @@ public final class ShieldIndexer implements Listener {
         }
     }
 
-    /** Degisiklik olay bittikten sonra gecerli olur, o yuzden bir tick bekleriz. */
+    /** The change lands after the event returns, so wait one tick. */
     private void scheduleReevaluate(Block block) {
         Location loc = block.getLocation();
         plugin.getServer().getScheduler().runTask(plugin, () -> {
@@ -191,7 +190,7 @@ public final class ShieldIndexer implements Listener {
         });
     }
 
-    /** Tek bir konumun gizli olmasi gerekip gerekmedigini yeniden karara baglar. */
+    /** Re-decides whether a single position should be hidden. */
     private void reevaluate(Block block) {
         int x = block.getX();
         int y = block.getY();
@@ -217,11 +216,11 @@ public final class ShieldIndexer implements Listener {
     }
 
     /**
-     * Alti komsusu da isik gecirmiyorsa blok gomuludur.
+     * A block is buried when all six neighbours block light.
      *
-     * <p>Yuklu olmayan bir komsu chunk icin karar verilmez ve blok gizlenmez:
-     * yanlislikla gizlemek oyuncunun kendi sandigini kaybetmesi demektir, o
-     * chunk yuklendiginde zaten yeniden degerlendirilecek.
+     * <p>No decision is made for an unloaded neighbour chunk and the block stays
+     * visible: hiding one by mistake means a player loses their own chest, and
+     * the position is re-evaluated anyway once that chunk loads.
      */
     private boolean enclosed(Block block) {
         World world = block.getWorld();
@@ -240,7 +239,7 @@ public final class ShieldIndexer implements Listener {
         return true;
     }
 
-    /** Artik gorunur olan blogu yakindaki oyunculara gercek haliyle gonderir. */
+    /** Sends the real block to nearby players once it becomes visible. */
     private void revealToPlayers(Block block) {
         Location loc = block.getLocation();
         var data = block.getBlockData();
@@ -257,7 +256,7 @@ public final class ShieldIndexer implements Listener {
             }
         }
         plugin.getLogger().info(String.format(Locale.ROOT,
-                "kalkan: %d,%d,%d artik gorunur - gercek blok gonderildi",
+                "shield: %d,%d,%d is now visible - real block sent",
                 block.getX(), block.getY(), block.getZ()));
     }
 }

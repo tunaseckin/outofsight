@@ -5,16 +5,16 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Gizlenecek block entity konumlarinin dizini.
+ * Index of block entity positions to hide.
  *
- * <p>Gomululuk karari neden pakette degil burada veriliyor: paket yalnizca tek
- * bir chunk sutunu tasir, dolayisiyla chunk kenarindaki bir blogun komsulari
- * elde olmaz - konumlarin dortte biri karar disi kalir. Ayrica paketten okunan
- * bir karar sadece paket gonderilirken gecerlidir; oyuncu duvari kirdiginda
- * sandigin artik gorunur oldugunu haber verecek kimse olmaz.
+ * <p>Why enclosure is decided here rather than from the packet: a packet carries
+ * a single chunk column, so a block on a chunk border has neighbours that are
+ * not available - about a quarter of positions would go undecided. A decision
+ * read from the packet is also only valid at send time; when a player breaks the
+ * wall there is nobody left to announce that the chest became visible.
  *
- * <p>Dizin ana is parcaciginda yazilir (dunyayi orada okuyabiliriz) ve ag is
- * parcaciginda okunur, bu yuzden eszamanli yapilar kullanilir.
+ * <p>The index is written on the main thread (where the world can be read) and
+ * read on network threads, hence the concurrent structures.
  */
 public final class HiddenIndex {
 
@@ -24,7 +24,7 @@ public final class HiddenIndex {
         return ((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL);
     }
 
-    /** Mutlak dunya koordinatlarini tek bir anahtara paketler. */
+    /** Packs absolute world coordinates into a single key. */
     public static long posKey(int x, int y, int z) {
         return ((long) (x & 0x3FFFFFF) << 38) | ((long) (z & 0x3FFFFFF) << 12) | (y & 0xFFF);
     }
@@ -34,7 +34,7 @@ public final class HiddenIndex {
                 .add(posKey(x, y, z));
     }
 
-    /** Konumu dizinden dusurur; gercekten dizindeyse {@code true} doner. */
+    /** Drops a position from the index; returns {@code true} if it was present. */
     public boolean reveal(int x, int y, int z) {
         Set<Long> set = byChunk.get(chunkKey(x >> 4, z >> 4));
         return set != null && set.remove(posKey(x, y, z));
@@ -54,7 +54,7 @@ public final class HiddenIndex {
         byChunk.remove(chunkKey(chunkX, chunkZ));
     }
 
-    /** Chunk anahtarindan koordinat cozer. */
+    /** Decodes coordinates from a chunk key. */
     public static int chunkXOf(long key) {
         return (int) (key >> 32);
     }
@@ -75,7 +75,7 @@ public final class HiddenIndex {
         return (int) (key << 26 >> 38);
     }
 
-    /** Sureli tarama icin anlik goruntu; uzerinde gezerken dizin degisebilir. */
+    /** Snapshot for the periodic sweep; the index may change while iterating. */
     public Map<Long, Set<Long>> snapshot() {
         return Map.copyOf(byChunk);
     }

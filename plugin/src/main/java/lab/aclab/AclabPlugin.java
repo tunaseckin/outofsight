@@ -18,19 +18,21 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Anticheat laboratuvari.
+ * Plugin entry point.
  *
- * <p>Iki modul, iki farkli savunma turunu temsil ediyor:
+ * <p>The modules represent two different kinds of defence:
  * <ul>
- *   <li>{@link XrayAudit} - bilgi hilelerine karsi. Tespit edilemezler, o yuzden
- *       veri hic gonderilmez; bu modul gonderilmedigini <em>ispatlar</em>.</li>
- *   <li>{@link ReachCheck} - eylem hilelerine karsi. Fizik cignendigi icin
- *       tespit edilebilirler; bu modul ping telafisiyle dogrular.</li>
+ *   <li>{@link lab.aclab.shield.BlockEntityShield} - against information cheats.
+ *       They cannot be detected, so the data is simply not sent.</li>
+ *   <li>{@link XrayAudit} - measures what still leaks, and <em>proves</em>
+ *       whether the data left the server.</li>
+ *   <li>{@link ReachCheck} - against action cheats. These break physics and are
+ *       detectable; this validates them with latency compensation.</li>
  * </ul>
  */
 public final class AclabPlugin extends JavaPlugin implements Listener {
 
-    /** Anti-xray'in {@code max-block-height} degeriyle ayni olmali. */
+    /** Should match anti-xray's {@code max-block-height}. */
     private static final int MAX_SCAN_Y = 128;
 
     private XrayAudit xrayAudit;
@@ -59,7 +61,7 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
                 getConfig().getInt("shield.decoy-correction-radius-chunks", 3));
         getServer().getScheduler().runTaskTimer(this, corrector::run, 20L, 20L);
         if (decoys.enabled()) {
-            getLogger().info("tuzak acik: chunk basina " + decoys.perChunk());
+            getLogger().info("decoys on: " + decoys.perChunk() + " per chunk");
         }
 
         indexer = new ShieldIndexer(this, hiddenIndex,
@@ -69,13 +71,13 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(indexer, this);
         getServer().getScheduler().runTask(this, indexer::indexLoadedChunks);
 
-        // Olaylarin kacirdigi degisiklikler icin guvenlik agi.
+        // Safety net for changes that events do not catch.
         long sweepTicks = Math.max(20L, getConfig().getLong("shield.sweep-interval-ticks", 40L));
         getServer().getScheduler().runTaskTimer(this, indexer::sweep, sweepTicks, sweepTicks);
 
         if (getConfig().getBoolean("shield.enabled", true)) {
             shield.toggle();
-            getLogger().info("kalkan acik (config: shield.enabled)");
+            getLogger().info("shield on (config: shield.enabled)");
         }
         PacketEvents.getAPI().getEventManager().registerListener(shield);
         PacketEvents.getAPI().getEventManager().registerListener(xrayAudit);
@@ -84,7 +86,7 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(this, this);
         getServer().getScheduler().runTaskTimer(this, reachCheck::tick, 1L, 1L);
 
-        getLogger().info("aclab etkin - /aclab xray, /aclab reachsim");
+        getLogger().info("aclab enabled - see /aclab");
     }
 
     @EventHandler
@@ -98,15 +100,15 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,
                              @NotNull String label, String @NotNull [] args) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage("Bu komut oyun icinden calistirilmali.");
+            sender.sendMessage("This command must be run in game.");
             return true;
         }
         if (args.length == 0) {
-            player.sendMessage("§7/aclab xray [chunk] §8- giden chunk paketlerini denetle");
-            player.sendMessage("§7/aclab reachsim <mesafe> §8- reach dogrulamasini sentetik girdiyle sina");
-            player.sendMessage("§7/aclab reachdebug §8- her vurusun olculen mesafesini yaz");
-            player.sendMessage("§7/aclab hidechest §8- tasa gomulu bir sandik koy (us bulma testi)");
-            player.sendMessage("§7/aclab shield §8- gomulu block entity kalkanini ac/kapat");
+            player.sendMessage("§7/aclab xray [chunks] §8- audit outgoing chunk packets");
+            player.sendMessage("§7/aclab reachsim <distance> §8- test reach with synthetic input");
+            player.sendMessage("§7/aclab reachdebug §8- log the measured distance of every hit");
+            player.sendMessage("§7/aclab hidechest §8- place a buried chest (base finding test)");
+            player.sendMessage("§7/aclab shield §8- toggle the buried block entity shield");
             return true;
         }
 
@@ -114,9 +116,9 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
             case "xray" -> {
                 int budget = args.length > 1 ? parseInt(args[1], 16) : 16;
                 xrayAudit.start(player, budget);
-                player.sendMessage("§bDenetim acildi §7- sonraki §f" + budget
-                        + " §7chunk paketi incelenecek. Yeni chunk yuklemek icin yuru"
-                        + " (ya da yer altina in, orada hassas blok bulunur).");
+                player.sendMessage("§bAudit started §7- the next §f" + budget
+                        + " §7chunk packets will be inspected. Relogging fills it"
+                        + " instantly; otherwise walk into new terrain.");
             }
             case "hidechest" -> hideChest(player);
             case "stress" -> {
@@ -130,7 +132,7 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
                 double tps = getServer().getTPS()[0];
                 for (String line : new String[]{shieldStats, sweepStats,
                         String.format(java.util.Locale.ROOT,
-                                "sunucu: %.2f ms/tick, %.2f TPS, %d oyuncu",
+                                "server: %.2f ms/tick, %.2f TPS, %d players",
                                 mspt, tps, getServer().getOnlinePlayers().size())}) {
                     player.sendMessage("§7" + line);
                     getLogger().info("[perf] " + line);
@@ -139,43 +141,43 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
             case "perfreset" -> {
                 shield.resetStats();
                 indexer.resetStats();
-                player.sendMessage("§7Olcumler sifirlandi.");
-                getLogger().info("[perf] sifirlandi");
+                player.sendMessage("§7Counters reset.");
+                getLogger().info("[perf] reset");
             }
             case "shield" -> {
                 boolean on = shield.toggle();
                 player.sendMessage(on
-                        ? "§aKalkan ACIK §7- gomulu sandik/spawner paketten siliniyor."
-                        : "§7Kalkan kapatildi.");
-                getLogger().info("kalkan " + (on ? "ACIK" : "kapali"));
+                        ? "§aShield ON §7- buried containers removed from packets."
+                        : "§7Shield off.");
+                getLogger().info("shield " + (on ? "ON" : "off"));
             }
             case "reachdebug" -> {
                 boolean on = reachCheck.toggleDebug(player);
                 player.sendMessage(on
-                        ? "§aReach tani modu ACIK §7- her vurus konsola ve buraya yazilacak."
-                        : "§7Reach tani modu kapatildi.");
+                        ? "§aReach probe ON §7- every hit is logged here and to console."
+                        : "§7Reach probe off.");
             }
             case "reachsim" -> {
                 if (args.length < 2) {
-                    player.sendMessage("§cKullanim: /aclab reachsim <mesafe>");
+                    player.sendMessage("§cUsage: /aclab reachsim <distance>");
                     return true;
                 }
                 simulateReach(player, parseDouble(args[1], 3.0));
             }
-            default -> player.sendMessage("§cBilinmeyen alt komut: " + args[0]);
+            default -> player.sendMessage("§cUnknown subcommand: " + args[0]);
         }
         return true;
     }
 
     /**
-     * Reach dogrulamasinin karar yolunu, hile yazmadan sentetik girdiyle sinar.
+     * Exercises the reach decision path with synthetic input, without a cheat.
      *
-     * <p>Verilen mesafede duran bir kurban kutusu uydurulur ve gercek kod yoluyla
-     * ayni karar hesaplanir. Boylece esigin nerede oldugu oyun icinde gorulebilir.
+     * <p>A victim box is fabricated at the given distance and the same code path
+     * computes the verdict, so the threshold can be seen in game.
      */
     private void simulateReach(Player player, double distance) {
         var eye = player.getEyeLocation();
-        // Kurbanin kutusunu, oyuncunun bakis yonunde tam 'distance' blok oteye koy.
+        // Place the victim box exactly 'distance' blocks along the player's look.
         var dir = eye.getDirection().normalize();
         double cx = eye.getX() + dir.getX() * distance;
         double cy = eye.getY() + dir.getY() * distance;
@@ -190,35 +192,35 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
         double allowed = (attribute != null ? attribute.getValue() : 3.0) + 0.03;
 
         player.sendMessage("§8§m                                        ");
-        player.sendMessage("§b§lReach simulasyonu");
-        player.sendMessage("§7Hedef merkezi:   §f" + String.format("%.2f", distance) + " blok");
-        player.sendMessage("§7Kutuya mesafe:   §f" + String.format("%.2f", measured) + " blok");
-        player.sendMessage("§7Izin verilen:    §f" + String.format("%.2f", allowed) + " blok");
+        player.sendMessage("§b§lReach simulation");
+        player.sendMessage("§7Target centre:  §f" + String.format("%.2f", distance) + " blocks");
+        player.sendMessage("§7To bounding box: §f" + String.format("%.2f", measured) + " blocks");
+        player.sendMessage("§7Allowed:         §f" + String.format("%.2f", allowed) + " blocks");
         player.sendMessage(measured > allowed
-                ? "§c✘ IHLAL - bu vurus isaretlenirdi"
-                : "§a✔ Temiz - bu vurus mesru sayilirdi");
+                ? "§c✘ VIOLATION - this hit would be flagged"
+                : "§a✔ Clean - this hit would count as legitimate");
         player.sendMessage("§8§m                                        ");
     }
 
     /**
-     * Alti tarafi tasla kapali bir sandik yerlestirir.
+     * Places a chest sealed in stone on all six sides.
      *
-     * <p>Kontrollu deney: koy evindeki sandik zaten havaya aciktir ve
-     * gonderilmesi normaldir. Us bulmanin calisip calismadigini olcmek icin
-     * hicbir yuzu gorunmeyen bir sandik gerekir - oyuncunun gizledigi us budur.
+     * <p>A controlled experiment: a chest in a village house is already exposed
+     * and sending it is correct. Measuring whether base finding works needs a
+     * chest with no visible face - a hidden base.
      */
     private void hideChest(Player player) {
-        // Testi dunya dogum noktasina kuruyoruz: bassiz test istemcisi orada
-        // dogar, dolayisiyla dogrulama insan beklemeden tekrarlanabilir.
+        // Built at world spawn: the headless test client appears there, so
+        // verification can repeat without waiting for a person.
         var world = player.getWorld();
         var spawn = world.getSpawnLocation();
-        // Chunk ortasina hizala: kenardaki blogun komsulari baska chunk'ta kalir
-        // ve tek kolondan gomululuk karari verilemez.
+        // Aligned to the chunk centre: a block on the border has neighbours in
+        // another chunk, where enclosure cannot be decided from one column.
         int cx = (spawn.getBlockX() & ~15) + 8;
         int cz = (spawn.getBlockZ() & ~15) + 8;
         int cy = Math.max(world.getMinHeight() + 5, spawn.getBlockY() - 12);
 
-        // 3x5x3 tas kabuk: hem sandik hem cevher her yonden kapali kalsin.
+        // A 3x5x3 stone shell so both the chest and the ore stay sealed.
         for (int dx = -1; dx <= 1; dx++) {
             for (int dy = -1; dy <= 3; dy++) {
                 for (int dz = -1; dz <= 1; dz++) {
@@ -231,25 +233,25 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
         world.getBlockAt(cx, cy + 2, cz).setType(org.bukkit.Material.DIAMOND_ORE, false);
 
         xrayAudit.watch(world, java.util.List.of(
-                new lab.aclab.xray.XrayAudit.WatchPos(cx, cy, cz, "chest", "Sandik"),
+                new lab.aclab.xray.XrayAudit.WatchPos(cx, cy, cz, "chest", "Chest"),
                 new lab.aclab.xray.XrayAudit.WatchPos(cx, cy + 2, cz, "diamond_ore",
-                        "Elmas cevheri (kontrol)")));
+                        "Diamond ore (control)")));
 
         player.sendMessage("§8§m                                        ");
-        player.sendMessage("§b§lGomulu sandik + kontrol cevheri yerlestirildi");
-        player.sendMessage("§7Konum: §f" + cx + ", " + cy + ", " + cz);
-        player.sendMessage("§7Ikisi de ayni tas kabugun icinde, hicbir acidan gorunmuyor.");
-        player.sendMessage("§7Gozcu kuruldu: bu chunk kime gonderilirse gonderilsin");
-        player.sendMessage("§7sonuc raporlanir. Cik-gir yapan bot da tetikler.");
+        player.sendMessage("§b§lBuried chest + control ore placed");
+        player.sendMessage("§7Position: §f" + cx + ", " + cy + ", " + cz);
+        player.sendMessage("§7Both sealed in the same stone shell, visible from nowhere.");
+        player.sendMessage("§7Watch armed: the result is reported whoever this");
+        player.sendMessage("§7chunk is sent to. A relogging bot triggers it too.");
         player.sendMessage("§8§m                                        ");
     }
 
     /**
-     * Yogun bir "us tarlasi" kurar: cok sayida gomulu sandik.
+     * Builds a dense field of buried chests.
      *
-     * <p>Bos bir dunyada olcum yaniltici olur - kalkanin ucuz yolu (dizinde kayit
-     * yoksa hemen cik) neredeyse her pakette calisir. Gercek bir sunucuda yuzlerce
-     * us vardir ve pahali yol (kolonu yeniden insa etme) surekli devreye girer.
+     * <p>Measuring on an empty world is misleading - the shield's cheap path
+     * (nothing indexed, return at once) runs on almost every packet. A real
+     * server has hundreds of bases, so the expensive path runs constantly.
      */
     private void stressChests(Player player, int count) {
         var world = player.getWorld();
@@ -275,25 +277,25 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
                 placed++;
             }
         }
-        String msg = placed + " gomulu sandik yerlestirildi, merkez " + originX + "," + y
+        String msg = placed + " buried chests placed, centred at " + originX + "," + y
                 + "," + originZ;
         player.sendMessage("§b" + msg);
         getLogger().info("[stress] " + msg);
     }
 
-    /** Yapilandirmadaki blok adlarini okur; taninmayanlari atlayip uyarir. */
+    /** Reads block names from config, warning about unrecognised ones. */
     private java.util.Set<org.bukkit.Material> readProtectedTypes() {
         java.util.Set<org.bukkit.Material> types = java.util.EnumSet.noneOf(org.bukkit.Material.class);
         for (String name : getConfig().getStringList("shield.protected-blocks")) {
             org.bukkit.Material material = org.bukkit.Material.matchMaterial(name);
             if (material == null) {
-                getLogger().warning("shield.protected-blocks: taninmayan blok '" + name + "'");
+                getLogger().warning("shield.protected-blocks: unknown block '" + name + "'");
             } else {
                 types.add(material);
             }
         }
         if (types.isEmpty()) {
-            getLogger().warning("shield.protected-blocks bos - kalkan hicbir sey gizlemeyecek.");
+            getLogger().warning("shield.protected-blocks is empty - the shield will hide nothing.");
         }
         return types;
     }

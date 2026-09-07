@@ -1,19 +1,18 @@
 package lab.aclab.reach;
 
 /**
- * Bir varligin son konumlarinin halka tamponu.
+ * Ring buffer of an entity's recent bounding boxes.
  *
- * <p>Saldiran oyuncu kurbani, kendi gecikmesi kadar <em>gecmiste</em> gorur.
- * Sunucudaki guncel konuma gore dogrulama yapmak, yuksek pingli mesru
- * oyunculari isaretler. Bu yuzden kurbanin gecmisi saklanir ve saldiri
- * paketi geldiginde ilgili zaman araligi geri sarilir.
+ * <p>An attacker sees their victim as it was one latency ago. Validating against
+ * the server's current position flags legitimate high-ping players, so the
+ * victim's history is kept and rewound when the attack packet arrives.
  *
- * <p>Ana is parcaciginda yazilir, ag is parcaciginda okunur; bu yuzden
- * erisim senkronizedir.
+ * <p>Written on the main thread, read on a network thread, hence the
+ * synchronisation.
  */
 public final class PositionHistory {
 
-    /** Tek bir anin kutusu. */
+    /** One moment's bounding box. */
     public record Sample(long timeMs,
                          double minX, double minY, double minZ,
                          double maxX, double maxY, double maxZ) {
@@ -46,13 +45,14 @@ public final class PositionHistory {
     }
 
     /**
-     * [fromMs, toMs] araligindaki ornekler icinde noktaya en yakin olani dondurur.
+     * Closest approach to the point among samples in [fromMs, toMs].
      *
-     * <p>En kucugu almak kasitlidir: aralikta kurbanin ulasilabilir oldugu tek bir
-     * an bile varsa vurus mesrudur. Supheyi oyuncunun lehine yorumlamak, bir
-     * anticheat'in yapabilecegi en onemli tercihtir.
+     * <p>Taking the minimum is deliberate: if there is a single moment in the
+     * window where the victim was reachable, the hit was legitimate. Reading
+     * doubt in the player's favour is the most important choice an anticheat
+     * makes.
      *
-     * @return en kisa mesafe; aralikta hic ornek yoksa {@link Double#NaN}
+     * @return the shortest distance, or {@link Double#NaN} if the window is empty
      */
     public synchronized double minDistanceWithin(long fromMs, long toMs,
                                                  double px, double py, double pz) {
@@ -71,11 +71,11 @@ public final class PositionHistory {
     }
 
     /**
-     * Verilen zaman araligindaki ornekleri dondurur.
+     * Samples inside the given window.
      *
-     * <p>Sadece kurbani degil saldirani da geri sarmak gerekir: ikisi de
-     * hareket halindedir ve mesru vurus, ikisinin gecmisindeki <em>herhangi</em>
-     * bir an ciftinin birbirine ulasabildigi durumdur.
+     * <p>The attacker has to be rewound as well as the victim: both are moving,
+     * and a legitimate hit is one where <em>some</em> pair of moments in their
+     * histories could reach each other.
      */
     public synchronized java.util.List<Sample> samplesWithin(long fromMs, long toMs) {
         java.util.List<Sample> out = new java.util.ArrayList<>();

@@ -1,8 +1,8 @@
 package lab.aclab.reach;
 
 /**
- * Reach dogrulamasinin saf matematigi. Bukkit'e bagimli degildir, bu yuzden
- * sunucu acmadan unit test edilebilir.
+ * Pure geometry for reach validation. No Bukkit dependency, so it can be unit
+ * tested without starting a server.
  */
 public final class ReachMath {
 
@@ -10,12 +10,12 @@ public final class ReachMath {
     }
 
     /**
-     * Bir noktadan eksen-hizali kutuya (AABB) olan en kisa mesafe.
+     * Shortest distance from a point to an axis-aligned bounding box.
      *
-     * <p>Anticheat'te merkeze olan mesafeyi olcmek klasik bir yanlis pozitif
-     * kaynagidir: uzun bir yaratigin ayagina mesru sekilde vuran oyuncu,
-     * merkeze 4 blok uzakta gorunur. Vanilla da isabeti kutuya gore hesaplar,
-     * dolayisiyla dogrulama da kutuya gore yapilmalidir.
+     * <p>Measuring to the centre instead is a classic source of false positives:
+     * a player legitimately hitting a tall mob's feet appears four blocks from
+     * its centre. Vanilla resolves hits against the box, so validation has to as
+     * well.
      */
     public static double distanceToBox(double px, double py, double pz,
                                        double minX, double minY, double minZ,

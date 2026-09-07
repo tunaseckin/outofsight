@@ -20,36 +20,36 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Ping telafili vurus mesafesi dogrulamasi.
+ * Ping-compensated hit distance validation.
  *
- * <p>X-ray'in aksine bu gercekten tespit edilebilir bir hile sinifi: fazladan
- * mesafeden vurmak sunucuya fiziksel olarak imkansiz bir paket gondermeyi
- * gerektirir, ve client kendini ne kadar iyi gizlerse gizlesin o paket gelir.
+ * <p>Unlike X-ray this is a genuinely detectable class of cheat: reaching
+ * further than allowed requires sending the server a physically impossible
+ * packet, and that packet arrives no matter how well the client hides itself.
  *
- * <p>Zor olan kisim yakalamak degil, mesru oyuncuyu yakalamamaktir. Uc bilincli
- * tercih bunun icin:
+ * <p>The hard part is not catching cheats but not catching legitimate players.
+ * Three deliberate choices serve that:
  * <ul>
- *   <li>Mesafe hedefin <em>kutusuna</em> olculur, merkezine degil.</li>
- *   <li>Hem saldiran hem kurban, saldiranin gecikmesi kadar geri sarilir ve
- *       aradaki <em>en yakin</em> an esas alinir.</li>
- *   <li>Tek ihlal ceza dogurmaz; ihlaller birikir ve temiz surede sonumlenir.</li>
+ *   <li>Distance is measured to the target's <em>bounding box</em>, not its centre.</li>
+ *   <li>Attacker and victim are both rewound by the attacker's latency, and the
+ *       <em>closest</em> moment in that window is used.</li>
+ *   <li>A single violation carries no penalty; violations accumulate and decay.</li>
  * </ul>
  */
 public final class ReachCheck extends PacketListenerAbstract {
 
-    /** Kayan nokta hatasi ve vanilla'nin kendi kutu genislemesi icin pay. */
+    /** Slack for floating point error and vanilla's own box expansion. */
     private static final double EPSILON = 0.03;
 
-    /** Geri sarma penceresine eklenen sabit tampon (ms). */
+    /** Fixed padding added to the rewind window, in milliseconds. */
     private static final int REWIND_PADDING_MS = 100;
 
-    /** Uyari verilmeden once birikmesi gereken ihlal seviyesi. */
+    /** Violation level that must accumulate before an alert is raised. */
     private static final double ALERT_THRESHOLD = 5.0;
 
-    /** Oyuncunun cevresinde gecmisi tutulan yaricap - reach'ten genis olmali. */
+    /** Radius around a player whose entities are tracked; must exceed reach. */
     private static final double TRACK_RADIUS = 10.0;
 
-    /** Bu sureden uzun goruilmeyen varligin gecmisi dusurulur. */
+    /** History is dropped for entities unseen for longer than this. */
     private static final long STALE_MS = 5_000;
 
     private final Plugin plugin;
@@ -57,7 +57,7 @@ public final class ReachCheck extends PacketListenerAbstract {
     private final Map<UUID, PositionHistory> attackerEyes = new ConcurrentHashMap<>();
     private final Map<UUID, ViolationTracker> violations = new ConcurrentHashMap<>();
 
-    /** Her vurusu raporlayan tani modu - mesru vurusta da cikti uretir. */
+    /** Probe mode reporting every hit, including legitimate ones. */
     private final java.util.Set<UUID> debug = ConcurrentHashMap.newKeySet();
 
     public ReachCheck(Plugin plugin) {
@@ -65,19 +65,19 @@ public final class ReachCheck extends PacketListenerAbstract {
         this.plugin = plugin;
     }
 
-    /** Bir varligin kutu gecmisi ve en son ne zaman goruldugusu. */
+    /** An entity's box history and when it was last seen. */
     private static final class Tracked {
         final PositionHistory history = new PositionHistory(40);
         volatile long lastSeenMs;
         volatile String name = "?";
     }
 
-    // --- ana is parcaciginda cagrilir -------------------------------------
+    // --- called on the main thread ----------------------------------------
 
     /**
-     * Her tick calisir; oyunculari ve cevrelerindeki canli varliklari kaydeder.
+     * Runs every tick, recording players and the living entities around them.
      *
-     * <p>Sadece oyunculari izlemek yetmez: aura hilesi cogunlukla mob'lara vurur,
+     * <p>Tracking only players is not enough: aura cheats mostly hit mobs, and
      * ve tek basina test edilebilmesi de buna bagli.
      */
     public void tick() {
@@ -113,7 +113,7 @@ public final class ReachCheck extends PacketListenerAbstract {
         victims.entrySet().removeIf(e -> now - e.getValue().lastSeenMs > STALE_MS);
     }
 
-    /** Tani modunu acar/kapatir; acik olup olmadigini dondurur. */
+    /** Toggles probe mode and returns whether it is now on. */
     public boolean toggleDebug(Player player) {
         UUID id = player.getUniqueId();
         if (!debug.remove(id)) {
@@ -129,7 +129,7 @@ public final class ReachCheck extends PacketListenerAbstract {
         victims.remove(player.getEntityId());
     }
 
-    // --- ag is parcaciginda cagrilir --------------------------------------
+    // --- called on a network thread ---------------------------------------
 
     @Override
     public void onPacketReceive(PacketReceiveEvent event) {
@@ -149,7 +149,7 @@ public final class ReachCheck extends PacketListenerAbstract {
         }
         Tracked victim = victims.get(victimId);
         if (victim == null) {
-            return; // Gecmisi yok - veri yokken suclama yapilmaz.
+            return; // No history - no accusation without data.
         }
 
         double distance = closestApproach(attacker.getUniqueId(), victim, attacker.getPing());
@@ -160,12 +160,12 @@ public final class ReachCheck extends PacketListenerAbstract {
         double allowed = allowedReach(attacker) + EPSILON;
 
         if (debug.contains(attacker.getUniqueId())) {
-            // Mesru vurusta da yazar: paket yolunun gercekten calistigini gormenin
-            // hile yazmadan tek yolu bu.
+            // Prints on legitimate hits too: without writing a cheat, this is the
+            // only way to see that the packet path actually runs.
             String line = String.format(Locale.ROOT,
-                    "reach tani [%s] hedef=%s mesafe=%.3f izin=%.3f ping=%dms -> %s",
+                    "reach probe [%s] target=%s distance=%.3f allowed=%.3f ping=%dms -> %s",
                     attacker.getName(), victim.name, distance, allowed, attacker.getPing(),
-                    distance > allowed ? "IHLAL" : "temiz");
+                    distance > allowed ? "VIOLATION" : "clean");
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 plugin.getLogger().info(line);
                 attacker.sendMessage("§8[tani] §7" + line.substring(line.indexOf("hedef=")));
@@ -181,8 +181,8 @@ public final class ReachCheck extends PacketListenerAbstract {
                 .add(1.0, System.currentTimeMillis());
 
         String message = String.format(Locale.ROOT,
-                "§c[aclab] §f%s §7reach ihlali: §f%.2f §7blok (izin: %.2f, hedef: %s, "
-                        + "ping: %dms, seviye: %.1f)",
+                "§c[aclab] §f%s §7reach violation: §f%.2f §7blocks (allowed: %.2f, target: %s, "
+                        + "ping: %dms, level: %.1f)",
                 attacker.getName(), distance, allowed, victim.name, attacker.getPing(), level);
 
         boolean alert = level >= ALERT_THRESHOLD;
@@ -195,10 +195,10 @@ public final class ReachCheck extends PacketListenerAbstract {
     }
 
     /**
-     * Saldiranin gozu ile kurbanin kutusu arasinda, geri sarma penceresindeki
-     * en yakin yaklasma mesafesi.
+     * Closest approach between the attacker's eye and the victim's box within
+     * the rewind window.
      *
-     * @return en kisa mesafe, ya da yeterli gecmis yoksa {@link Double#NaN}
+     * @return the shortest distance, or {@link Double#NaN} without enough history
      */
     private double closestApproach(UUID attackerId, Tracked victim, int pingMs) {
         PositionHistory eyes = attackerEyes.get(attackerId);
@@ -225,11 +225,11 @@ public final class ReachCheck extends PacketListenerAbstract {
     }
 
     /**
-     * Oyuncunun mesru erisim mesafesi.
+     * The player's legitimate interaction range.
      *
-     * <p>Sabit 3.0 yazmak yerine oyuncunun kendi niteliginden okunur: yaratici
-     * moddaki oyuncunun ve nitelik degistiren esyalarin menzili farklidir, ve
-     * bunu gozden kacirmak dogrudan yanlis pozitif uretir.
+     * <p>Read from the player's own attribute rather than hardcoded to 3.0:
+     * creative mode and attribute-modifying items give a different range, and
+     * missing that produces false positives directly.
      */
     private double allowedReach(Player player) {
         var attribute = player.getAttribute(Attribute.ENTITY_INTERACTION_RANGE);

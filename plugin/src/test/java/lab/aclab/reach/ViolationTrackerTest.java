@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ViolationTrackerTest {
 
     @Test
-    @DisplayName("ihlaller birikir")
+    @DisplayName("violations accumulate")
     void violationsAccumulate() {
         ViolationTracker v = new ViolationTracker(1.0);
         assertEquals(1.0, v.add(1.0, 1000), 1e-9);
@@ -16,15 +16,15 @@ class ViolationTrackerTest {
     }
 
     @Test
-    @DisplayName("temiz gecen sure seviyeyi sonumler")
+    @DisplayName("clean time decays the level")
     void levelDecaysOverTime() {
-        ViolationTracker v = new ViolationTracker(1.0); // saniyede 1.0
+        ViolationTracker v = new ViolationTracker(1.0); // 1.0 per second
         v.add(5.0, 1000);
-        assertEquals(2.0, v.current(4000), 1e-9); // 3 saniye sonra 5 - 3 = 2
+        assertEquals(2.0, v.current(4000), 1e-9); // after 3 seconds: 5 - 3 = 2
     }
 
     @Test
-    @DisplayName("sonumleme sifirin altina inmez")
+    @DisplayName("decay floors at zero")
     void decayFloorsAtZero() {
         ViolationTracker v = new ViolationTracker(1.0);
         v.add(2.0, 1000);

@@ -1,12 +1,12 @@
 package lab.aclab.reach;
 
 /**
- * Ihlal seviyesi ve zamanla sonumlenmesi.
+ * Violation level with decay over time.
  *
- * <p>Tek bir ihlalde ceza vermek yanlis pozitif demektir: bir paket gecikmesi,
- * bir sunucu takilmasi ya da bir kenar durumu her oyuncuda er ya da gec olusur.
- * Anlamli olan, ihlallerin <em>birikmesidir</em>. Temiz gecen sure ihlal
- * seviyesini geri dusurur.
+ * <p>Punishing a single violation means false positives: a packet delay, a
+ * server hiccup or an edge case will eventually happen to every player. What
+ * carries meaning is violations <em>accumulating</em>. Clean time brings the
+ * level back down.
  */
 public final class ViolationTracker {
 
@@ -18,14 +18,14 @@ public final class ViolationTracker {
         this.decayPerSecond = decayPerSecond;
     }
 
-    /** Bir ihlal ekler ve sonumlemeden sonraki guncel seviyeyi dondurur. */
+    /** Adds a violation and returns the level after decay. */
     public double add(double amount, long nowMs) {
         decayTo(nowMs);
         level += amount;
         return level;
     }
 
-    /** Ihlal eklemeden guncel seviyeyi dondurur. */
+    /** Current level without adding a violation. */
     public double current(long nowMs) {
         decayTo(nowMs);
         return level;

@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ReachMathTest {
 
-    // Ayakta duran bir oyuncunun kutusu: 0.6 x 1.8 x 0.6
+    // A standing player's box: 0.6 x 1.8 x 0.6
     private static final double[] PLAYER_AT_ORIGIN =
             {-0.3, 0.0, -0.3, 0.3, 1.8, 0.3};
 
@@ -16,38 +16,37 @@ class ReachMathTest {
     }
 
     @Test
-    @DisplayName("kutunun icindeki nokta sifir mesafededir")
+    @DisplayName("a point inside the box is at distance zero")
     void insideBoxIsZero() {
         assertEquals(0.0, distTo(PLAYER_AT_ORIGIN, 0.0, 1.0, 0.0), 1e-9);
     }
 
     @Test
-    @DisplayName("tek eksende disaridaki nokta yuzeye olan mesafeyi verir")
+    @DisplayName("a point outside on one axis measures to the face")
     void outsideOnSingleAxis() {
-        // x = 3.3, kutunun sag yuzu 0.3 -> mesafe 3.0
+        // x = 3.3, the box's right face is at 0.3 -> distance 3.0
         assertEquals(3.0, distTo(PLAYER_AT_ORIGIN, 3.3, 1.0, 0.0), 1e-9);
     }
 
     @Test
-    @DisplayName("uzun bir hedefin ayagina vurmak merkez mesafesiyle olculmemeli")
+    @DisplayName("hitting a tall target's feet must not be measured from its centre")
     void tallTargetFootHitIsNotMeasuredFromCenter() {
-        // Ender ejderi benzeri genis bir kutu yerine, uzun bir hedef dusunelim:
-        // y = 0..4 arasi, oyuncu tam ayagin yaninda duruyor.
+        // A tall target spanning y = 0..4, with the player standing by its feet.
         double[] tall = {-0.5, 0.0, -0.5, 0.5, 4.0, 0.5};
 
-        double toFoot = distTo(tall, 1.5, 0.5, 0.0);   // ayaga yakin
-        double toCenter = Math.sqrt(1.5 * 1.5 + 1.5 * 1.5); // merkez y=2.0'a olan mesafe
+        double toFoot = distTo(tall, 1.5, 0.5, 0.0);        // near the feet
+        double toCenter = Math.sqrt(1.5 * 1.5 + 1.5 * 1.5); // to the centre at y=2.0
 
-        assertEquals(1.0, toFoot, 1e-9, "kutuya mesafe 1.0 olmali");
-        assertTrue(toCenter > 2.0, "merkez mesafesi yanlislikla cok buyuk cikar");
-        // Merkeze gore olculseydi 3.0 esigini asip mesru vurusu isaretlerdi.
+        assertEquals(1.0, toFoot, 1e-9, "distance to the box should be 1.0");
+        assertTrue(toCenter > 2.0, "the centre distance comes out wrongly large");
+        // Measured from the centre this would cross 3.0 and flag a legitimate hit.
         assertTrue(toFoot < 3.0 && toCenter > toFoot);
     }
 
     @Test
-    @DisplayName("kosegen mesafe uc eksende birlikte hesaplanir")
+    @DisplayName("diagonal distance combines all three axes")
     void diagonalDistance() {
-        // (2.3, 1.0, 2.3) -> kutunun kosesine 2.0, 2.0 -> sqrt(8)
+        // (2.3, 1.0, 2.3) -> 2.0 and 2.0 to the corner -> sqrt(8)
         assertEquals(Math.sqrt(8.0), distTo(PLAYER_AT_ORIGIN, 2.3, 1.0, 2.3), 1e-9);
     }
 }

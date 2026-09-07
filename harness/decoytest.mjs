@@ -1,8 +1,8 @@
-// Tuzaklarin yalnizca uzakta durdugunu, oyuncunun yaninda temizlendigini olcer.
+// Measures that decoys stay far away and are cleared near the player.
 //
-// Savunmanin dayandigi iddia su: tuzak hilecinin gordugu uzak chunk'larda
-// bulunur, mesru oyuncunun kazabilecegi yakinlikta bulunmaz. Bu betik ikisini
-// ayri ayri sayar.
+// The claim the defence rests on: decoys sit in the distant chunks a cheat
+// reads, and not within reach of a legitimate player's digging. This counts
+// both separately.
 
 import mc from 'minecraft-protocol';
 
@@ -47,13 +47,13 @@ client.on('login', () => {
     const nearFixed = near.filter((e) => corrected.has(`${e.x},${e.y},${e.z}`)).length;
     const farFixed = far.filter((e) => corrected.has(`${e.x},${e.y},${e.z}`)).length;
 
-    console.log(`[tuzak] toplam block entity: ${entities.length}`);
-    console.log(`[tuzak] YAKIN (<=3 chunk): ${near.length} adet, ${nearFixed} tanesi duzeltildi`);
-    console.log(`[tuzak] UZAK  (>3 chunk):  ${far.length} adet, ${farFixed} tanesi duzeltildi`);
-    console.log(`[tuzak] gelen blok guncellemesi: ${corrected.size}`);
+    console.log(`[decoy] total block entities: ${entities.length}`);
+    console.log(`[decoy] NEAR (<=3 chunks): ${near.length}, ${nearFixed} corrected`);
+    console.log(`[decoy] FAR  (>3 chunks):  ${far.length}, ${farFixed} corrected`);
+    console.log(`[decoy] block updates received: ${corrected.size}`);
     client.end();
     process.exit(0);
   }, 9000);
 });
 
-client.on('error', (e) => { console.error('[tuzak] hata:', e.message); process.exit(1); });
+client.on('error', (e) => { console.error('[decoy] error:', e.message); process.exit(1); });

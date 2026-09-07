@@ -6,19 +6,19 @@ import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Sahte gomulu sandik konumlari uretir.
+ * Generates fake buried chest positions.
  *
- * <p>Gizleme "bulamazsin" der; tuzak "buldugunu sandigin sey de yalan" der.
- * Ikisi birlikte, us arayanin elindeki veriyi kullanilamaz hale getirir.
+ * <p>Hiding says "you will not find it". Decoys say "what you did find is a
+ * lie". Together they make a base finder's data unusable.
  *
- * <p>Tuzak dogasi geregi yalnizca hileciye gorunur: tasin icine gomulu bir
- * sandigi mesru oyuncu goremez, cunku gorus hatti yoktur. Hile ise yuklu tum
- * chunk'lari birden okur. Savunmanin dayandigi asimetri budur - mesru oyun
- * yereldir, hile kureseldir.
+ * <p>A decoy is only ever visible to a cheat: a chest sealed in stone has no
+ * line of sight to a legitimate player, while a cheat reads every loaded chunk
+ * at once. That asymmetry is what the defence rests on - legitimate play is
+ * local, cheating is global.
  *
- * <p>Konumlar chunk koordinatindan deterministik uretilir. Rastgele uretilseydi
- * ayni chunk her gonderildiginde tuzak yer degistirir, bu da hem titreme
- * yaratir hem de sunucunun veri uydurdugunu dogrudan ele verirdi.
+ * <p>Positions are derived deterministically from chunk coordinates. Random ones
+ * would move every time a chunk is resent, which both flickers and openly
+ * signals that the server is fabricating data.
  */
 public final class DecoyService {
 
@@ -26,20 +26,20 @@ public final class DecoyService {
     private final long seed;
 
     /**
-     * Sandik block entity'sinin kayit numarasi.
+     * Registry id of the chest block entity.
      *
-     * <p>Sabit yazmak yerine gercek paketlerden ogrenilir: bu numara surum
-     * arasinda degisir ve yanlis deger sessizce bozuk paket uretirdi. Ogrenene
-     * kadar tuzak konmaz.
+     * <p>Learned from live packets rather than hardcoded: this id changes between
+     * versions and a wrong value would quietly produce corrupt packets. No decoy
+     * is planted until it is known.
      */
     private final AtomicInteger chestTypeId = new AtomicInteger(-1);
 
     /**
-     * Her kacinci chunk'a tuzak konacagi.
+     * How often a chunk carries decoys.
      *
-     * <p>Her chunk'a koymak gereksiz: hilecinin verisini kullanilamaz kilmak icin
-     * tuzaklarin seyrek olmasi yeter. Buna karsilik her chunk'a koymak, her
-     * paketin yeniden serialize edilmesi demektir - asil maliyet oradadir.
+     * <p>Every chunk is unnecessary: sparse decoys poison a cheat's data just as
+     * well. Planting in every chunk instead means re-serialising every packet,
+     * and that is where the real cost sits.
      */
     private final int chunkInterval;
 
@@ -64,18 +64,18 @@ public final class DecoyService {
         return chestTypeId.get();
     }
 
-    /** Gercek bir sandik block entity'si gorulunce numarasini ogrenir. */
+    /** Learns the id when a real chest block entity is seen. */
     public void learnChestType(int typeId) {
         chestTypeId.compareAndSet(-1, typeId);
     }
 
     /**
-     * Bir chunk icin aday tuzak konumlari (chunk-yerel x, dunya y, chunk-yerel z).
+     * Candidate decoy positions for a chunk (chunk-local x, world y, chunk-local z).
      *
-     * <p>Aday, cunku bu asamada blok verisine bakilmaz: konumun gercekten gomulu
-     * olup olmadigini paketi elinde tutan taraf dogrular.
+     * <p>Candidates only: block data is not consulted here. Whoever holds the
+     * packet verifies whether a position is genuinely buried.
      */
-    /** Bu chunk tuzak tasiyacak mi? Deterministik, yani her gonderimde ayni. */
+    /** Does this chunk carry decoys? Deterministic, so identical on every resend. */
     public boolean carriesDecoys(int chunkX, int chunkZ) {
         if (!enabled()) {
             return false;
@@ -94,7 +94,7 @@ public final class DecoyService {
                 + chunkZ * 132897987541L);
 
         List<int[]> out = new ArrayList<>();
-        // Her tuzak icin birkac aday uret; ilk gecerli olan kullanilir.
+        // Several candidates per decoy; the first valid one is used.
         for (int i = 0; i < perChunk * 6; i++) {
             int lx = 2 + random.nextInt(12);
             int lz = 2 + random.nextInt(12);

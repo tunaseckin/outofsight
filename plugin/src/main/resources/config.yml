@@ -1,23 +1,23 @@
-# aclab yapilandirmasi
+# aclab configuration
 
 shield:
-  # Tamamen gomulu sandik/spawner konumlarini giden chunk paketinden sil.
-  # Kapatirsan eklenti yalnizca olcum araci olarak calisir.
+  # Remove fully buried containers from outgoing chunk packets.
+  # With this off the plugin acts only as a measurement tool.
   enabled: true
 
-  # Ortaya cikan blogun kac blok yaricapindaki oyunculara gonderilecegi.
+  # How far, in blocks, a revealed block is sent to players.
   reveal-range: 128.0
 
-  # Olaylarin kacirdigi degisiklikler icin guvenlik agi taramasinin araligi.
-  # Dusurmek tepki suresini kisaltir, sunucu yukunu artirir. En az 20.
+  # Interval of the safety-net sweep that catches changes events miss.
+  # Lowering it shortens reaction time and raises server load. Minimum 20.
   sweep-interval-ticks: 40
 
-  # Guvenlik agi taramasinin oyuncu cevresinde kapsadigi chunk yaricapi.
-  # Buyutmek kapsami genisletir, tarama maliyetini kare olarak artirir.
+  # Chunk radius around a player covered by the safety-net sweep.
+  # Widening it extends coverage and raises sweep cost quadratically.
   sweep-radius-chunks: 4
 
-  # Gizlenecek blok turleri. Bir us sandiktan ibaret degil - firin, huni ve
-  # isaret feneri de "burada biri yasiyor" isaretidir.
+  # Block types to hide. A base is not only chests: a furnace, a hopper or a
+  # beacon says "someone lives here" just as plainly.
   protected-blocks:
     - chest
     - trapped_chest
@@ -33,19 +33,18 @@ shield:
     - beacon
     - enchanting_table
 
-  # Chunk basina konacak sahte gomulu sandik sayisi (tuzak). 0 = kapali.
-  # Gizleme "bulamazsin" der, tuzak "buldugun da yalan" der. Tasin icine
-  # gomulu olduklari icin mesru oyuncuya gorunmezler.
+  # Fake buried chests planted per chunk. 0 disables them.
+  # Hiding says "you will not find it", decoys say "what you found is a lie".
+  # Sealed in stone, they are never visible to a legitimate player.
   decoys-per-chunk: 0
 
-  # Oyuncu bu yaricapa girince tuzaklar sessizce gercek bloga doner.
+  # Decoys quietly revert to the real block once a player is this close.
   decoy-correction-radius-chunks: 3
 
-  # Sandik block entity'sinin kayit numarasi. -1 = gercek paketlerden ogren.
-  # Surume ozgu bir degerdir; otomatik ogrenme yeterli olmazsa elle verilebilir.
+  # Registry id of the chest block entity. -1 learns it from live packets.
+  # Version specific; set it manually if automatic learning fails.
   decoy-block-entity-type: -1
 
-  # Her kacinci chunk'a tuzak konacagi. Hilecinin verisini kullanilamaz kilmak
-  # icin tuzaklarin seyrek olmasi yeter; her chunk'a koymak her paketin yeniden
-  # serialize edilmesi demektir ve asil maliyet oradadir.
+  # How often a chunk carries decoys. Sparse decoys poison a cheat's data just
+  # as well, and the real cost is re-serialising every packet you touch.
   decoy-chunk-interval: 4
