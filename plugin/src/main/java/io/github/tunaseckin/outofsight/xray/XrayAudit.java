@@ -1,4 +1,4 @@
-package lab.aclab.xray;
+package io.github.tunaseckin.outofsight.xray;
 
 import com.github.retrooper.packetevents.event.PacketListenerAbstract;
 import com.github.retrooper.packetevents.event.PacketListenerPriority;

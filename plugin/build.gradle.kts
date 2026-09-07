@@ -2,7 +2,7 @@ plugins {
     java
 }
 
-group = "lab.aclab"
+group = "io.github.tunaseckin"
 version = "0.1.0"
 
 repositories {

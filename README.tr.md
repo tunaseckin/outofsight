@@ -1,4 +1,4 @@
-# aclab, Minecraft anticheat laboratuvarı
+# OutOfSight, Minecraft anticheat laboratuvarı
 
 Yerel bir test ortamı ve iki savunma modülü. Amaç, iki farklı hile sınıfının
 neden **temelden farklı** savunmalar gerektirdiğini çalışan kodla göstermek.
@@ -19,7 +19,7 @@ doğru cevap daha iyi bir dedektör değil, veriyi kesmektir.
 
 - `server/`, Paper 1.21.11 (build 132), **sadece 127.0.0.1'e bağlı**, offline mode
 - `server/plugins/packetevents-spigot-2.13.0.jar`, paket erişimi
-- `server/plugins/aclab-0.1.0.jar`, bu proje
+- `server/plugins/outofsight-0.1.0.jar`, bu proje
 - `plugin/`, Gradle kaynak projesi
 
 Paper'ın anti-xray'i açıldı (`config/paper-world-defaults.yml`):
@@ -83,19 +83,20 @@ vurur, ve tek kişiyle test edilebilmesi de buna bağlı.
 
 Minecraft 1.21.11 ile `localhost`'a bağlan:
 
-- `/aclab xray 16`, girer girmez dolar (sunucu görüş mesafesindeki tüm chunk'ları
+- `/outofsight xray 16`, girer girmez dolar (sunucu görüş mesafesindeki tüm chunk'ları
   tek seferde gönderir), dolaşmaya gerek yok
-- `/aclab reachdebug`, her vuruşun ölçülen mesafesini yazar. Meşru vuruşta da
+- `/outofsight reachdebug`, her vuruşun ölçülen mesafesini yazar. Meşru vuruşta da
   çıktı verir; paket yolunun çalıştığını hile yazmadan doğrulamanın yolu bu
-- `/aclab reachsim 3.5`, eşiği sentetik girdiyle göster
-- `/aclab hidechest`, chunk ortasına gömülü sandık + kontrol cevheri koy
-- `/aclab shield`, kalkanı aç/kapat (deneysel)
+- `/outofsight reachsim 3.5`, eşiği sentetik girdiyle göster
+- `/outofsight hidechest`, chunk ortasına gömülü sandık + kontrol cevheri koy
+- `/outofsight shield`, kalkanı aç/kapat (deneysel)
 
 ### Başsız test istemcisi (`harness/`)
 
 ```
-node relog.mjs aclab_bot 5000 "aclab hidechest"   # baglan, komut, cik
-node inspect.mjs 152 54 -408                        # o konumu istemci gozuyle incele
+node relog.mjs oos_bot 5000 "outofsight hidechest"   # baglan, komut, cik
+node inspect.mjs 152 54 -408                        # chunk paketi o konumda ne tasiyor
+node watch.mjs 152 54 -408                         # kap sonradan teslim ediliyor mu
 ```
 
 Sunucu chunk'i ancak istemci bagliyken gonderir, yani her test turu bir
@@ -117,7 +118,7 @@ Anti-xray açıkken X-ray pratikte işlevsiz.
 
 ### Ana bulgu: anti-xray sandıkları korumuyor
 
-Kontrollü deney (`/aclab hidechest`), aynı taş kabuğun içine, her yönden kapalı,
+Kontrollü deney (`/outofsight hidechest`), aynı taş kabuğun içine, her yönden kapalı,
 ikisi de Paper'ın `hidden-blocks` listesinde olan iki blok:
 
 ```
@@ -300,8 +301,8 @@ için yapılmadı.
   bu yönüyle ölçüm karamsar tarafta.
 - Bellek: dizinde 261 kayıt, ölçülebilir bir yük oluşturmadı.
 
-`/aclab perf` ve `/aclab perfreset` ile kendi sunucunda aynı ölçümü yapabilirsin.
-`/aclab stress <n>` yoğun bir "üs tarlası" kurar.
+`/outofsight perf` ve `/outofsight perfreset` ile kendi sunucunda aynı ölçümü yapabilirsin.
+`/outofsight stress <n>` yoğun bir "üs tarlası" kurar.
 
 ## Testler
 

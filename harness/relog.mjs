@@ -10,7 +10,7 @@ import mc from 'minecraft-protocol';
 const HOST = '127.0.0.1';
 const PORT = 25565;
 const VERSION = '1.21.11';
-const USERNAME = process.argv[2] ?? 'aclab_bot';
+const USERNAME = process.argv[2] ?? 'oos_bot';
 const WAIT_MS = Number(process.argv[3] ?? 6000);
 const COMMAND = process.argv[4] ?? null;
 

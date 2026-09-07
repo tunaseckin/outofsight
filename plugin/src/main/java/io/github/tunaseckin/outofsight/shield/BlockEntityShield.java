@@ -1,4 +1,4 @@
-package lab.aclab.shield;
+package io.github.tunaseckin.outofsight.shield;
 
 import com.github.retrooper.packetevents.event.PacketListenerAbstract;
 import com.github.retrooper.packetevents.event.PacketListenerPriority;

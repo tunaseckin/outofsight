@@ -1,4 +1,4 @@
-# aclab configuration
+# OutOfSight configuration
 
 shield:
   # Remove fully buried containers from outgoing chunk packets.

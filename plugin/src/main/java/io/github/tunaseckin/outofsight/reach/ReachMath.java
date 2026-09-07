@@ -1,4 +1,4 @@
-package lab.aclab.reach;
+package io.github.tunaseckin.outofsight.reach;
 
 /**
  * Pure geometry for reach validation. No Bukkit dependency, so it can be unit

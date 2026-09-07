@@ -1,4 +1,4 @@
-# aclab
+# OutOfSight
 
 A Paper plugin that stops base finding, the cheat capability Minecraft's own
 anti-xray does not cover.
@@ -134,17 +134,17 @@ hardcoded. That showed up immediately in testing: creative allows 5.03, survival
 
 ## Commands
 
-All require `aclab.admin` (op by default).
+All require `outofsight.admin` (op by default).
 
 | Command | Purpose |
 |---|---|
-| `/aclab xray [chunks]` | Audit outgoing chunk packets for leaks |
-| `/aclab hidechest` | Place a buried chest + control ore, then relog to test |
-| `/aclab shield` | Toggle the shield |
-| `/aclab reachdebug` | Log the measured distance of every hit |
-| `/aclab reachsim <d>` | Show where the reach threshold sits |
-| `/aclab stress <n>` | Build a dense field of buried chests for load testing |
-| `/aclab perf` / `perfreset` | Cost measurements |
+| `/outofsight xray [chunks]` | Audit outgoing chunk packets for leaks |
+| `/outofsight hidechest` | Place a buried chest + control ore, then relog to test |
+| `/outofsight shield` | Toggle the shield |
+| `/outofsight reachdebug` | Log the measured distance of every hit |
+| `/outofsight reachsim <d>` | Show where the reach threshold sits |
+| `/outofsight stress <n>` | Build a dense field of buried chests for load testing |
+| `/outofsight perf` / `perfreset` | Cost measurements |
 
 ## Performance
 
@@ -187,7 +187,8 @@ the raw buffer and never sees the shield's changes.
 
 ```
 node relog.mjs <name> <ms> ["command"]   # connect, run a command, leave
-node inspect.mjs <x> <y> <z>             # what the client receives at a position
+node inspect.mjs <x> <y> <z>             # what the chunk packet carries at a position
+node watch.mjs <x> <y> <z>               # whether a container is delivered later
 node dig.mjs <x> <y> <z>                 # break the wall, watch for the reveal
 node decoytest.mjs                       # decoy distribution, near vs far
 node loadtest.mjs <bots> <secs>          # load generation
@@ -212,6 +213,11 @@ named here. If you filed something that changed the code, open a pull request
 adding yourself, or say so on the issue and it will be added.
 
 (nobody yet)
+
+## Footnote
+
+Krypton is a noble gas. Fluorine is the only element reactive enough to make it
+bond. This is not fluorine, but it does ruin its day.
 
 ## License
 

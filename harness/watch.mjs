@@ -11,7 +11,7 @@ const bx = Number(X), by = Number(Y), bz = Number(Z);
 
 const client = mc.createClient({
   host: '127.0.0.1', port: 25565,
-  username: 'aclab_watch', auth: 'offline', version: '1.21.11',
+  username: 'oos_watch', auth: 'offline', version: '1.21.11',
 });
 
 let got = false;

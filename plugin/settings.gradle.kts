@@ -1,1 +1,1 @@
-rootProject.name = "aclab"
+rootProject.name = "outofsight"

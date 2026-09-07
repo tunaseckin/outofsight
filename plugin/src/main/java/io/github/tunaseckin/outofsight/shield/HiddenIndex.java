@@ -1,4 +1,4 @@
-package lab.aclab.shield;
+package io.github.tunaseckin.outofsight.shield;
 
 import java.util.Map;
 import java.util.Set;

@@ -1,4 +1,4 @@
-package lab.aclab.reach;
+package io.github.tunaseckin.outofsight.reach;
 
 /**
  * Violation level with decay over time.

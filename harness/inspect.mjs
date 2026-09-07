@@ -12,7 +12,7 @@ const cx = bx >> 4, cz = bz >> 4;
 
 const client = mc.createClient({
   host: '127.0.0.1', port: 25565,
-  username: 'aclab_probe', auth: 'offline', version: '1.21.11',
+  username: 'oos_probe', auth: 'offline', version: '1.21.11',
 });
 
 let reported = false;

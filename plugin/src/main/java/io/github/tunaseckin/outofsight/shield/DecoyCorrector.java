@@ -1,4 +1,4 @@
-package lab.aclab.shield;
+package io.github.tunaseckin.outofsight.shield;
 
 import org.bukkit.World;
 import org.bukkit.entity.Player;

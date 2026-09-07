@@ -1,4 +1,4 @@
-package lab.aclab.reach;
+package io.github.tunaseckin.outofsight.reach;
 
 import com.github.retrooper.packetevents.event.PacketListenerAbstract;
 import com.github.retrooper.packetevents.event.PacketListenerPriority;
@@ -181,7 +181,7 @@ public final class ReachCheck extends PacketListenerAbstract {
                 .add(1.0, System.currentTimeMillis());
 
         String message = String.format(Locale.ROOT,
-                "§c[aclab] §f%s §7reach violation: §f%.2f §7blocks (allowed: %.2f, target: %s, "
+                "§c[OutOfSight] §f%s §7reach violation: §f%.2f §7blocks (allowed: %.2f, target: %s, "
                         + "ping: %dms, level: %.1f)",
                 attacker.getName(), distance, allowed, victim.name, attacker.getPing(), level);
 
@@ -189,7 +189,7 @@ public final class ReachCheck extends PacketListenerAbstract {
         plugin.getServer().getScheduler().runTask(plugin, () -> {
             plugin.getLogger().info(message.replaceAll("§.", ""));
             if (alert) {
-                plugin.getServer().broadcast(Component.text(message), "aclab.admin");
+                plugin.getServer().broadcast(Component.text(message), "outofsight.admin");
             }
         });
     }

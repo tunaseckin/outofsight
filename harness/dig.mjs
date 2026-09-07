@@ -13,7 +13,7 @@ const wall = { x: cxx, y: cyy + 1, z: czz };   // the stone above the chest
 
 const client = mc.createClient({
   host: '127.0.0.1', port: 25565,
-  username: 'aclab_digger', auth: 'offline', version: '1.21.11',
+  username: 'oos_digger', auth: 'offline', version: '1.21.11',
 });
 
 let seq = 1;

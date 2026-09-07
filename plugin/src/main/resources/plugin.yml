@@ -1,16 +1,17 @@
-name: aclab
+name: OutOfSight
 version: '${version}'
-main: lab.aclab.AclabPlugin
+main: io.github.tunaseckin.outofsight.OutOfSightPlugin
 api-version: '1.21'
 depend: [packetevents]
 description: Stops base finding - hides buried containers from chunk packets
 author: tunaseckin
-website: https://github.com/tunaseckin/aclab
+website: https://github.com/tunaseckin/outofsight
 commands:
-  aclab:
-    description: aclab administration
-    usage: /aclab <xray|shield|hidechest|reachdebug|reachsim|stress|perf>
-    permission: aclab.admin
+  outofsight:
+    description: OutOfSight administration
+    usage: /outofsight <xray|shield|hidechest|reachdebug|reachsim|stress|perf>
+    permission: outofsight.admin
+    aliases: [oos]
 permissions:
-  aclab.admin:
+  outofsight.admin:
     default: op

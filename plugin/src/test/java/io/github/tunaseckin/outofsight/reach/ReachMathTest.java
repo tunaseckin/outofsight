@@ -1,4 +1,4 @@
-package lab.aclab.reach;
+package io.github.tunaseckin.outofsight.reach;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

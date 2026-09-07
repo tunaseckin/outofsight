@@ -31,7 +31,7 @@ body:
   - type: textarea
     id: perf
     attributes:
-      label: Output of /aclab perf
+      label: Output of /outofsight perf
       description: Run it while the server is under normal load, then paste the result.
       render: text
 
@@ -60,5 +60,5 @@ body:
     id: log
     attributes:
       label: Relevant log lines
-      description: Anything from aclab or a stack trace.
+      description: Anything from OutOfSight or a stack trace.
       render: text

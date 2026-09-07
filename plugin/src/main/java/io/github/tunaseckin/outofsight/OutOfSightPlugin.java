@@ -1,13 +1,13 @@
-package lab.aclab;
+package io.github.tunaseckin.outofsight;
 
 import com.github.retrooper.packetevents.PacketEvents;
-import lab.aclab.reach.ReachCheck;
-import lab.aclab.shield.BlockEntityShield;
-import lab.aclab.shield.DecoyCorrector;
-import lab.aclab.shield.DecoyService;
-import lab.aclab.shield.HiddenIndex;
-import lab.aclab.shield.ShieldIndexer;
-import lab.aclab.xray.XrayAudit;
+import io.github.tunaseckin.outofsight.reach.ReachCheck;
+import io.github.tunaseckin.outofsight.shield.BlockEntityShield;
+import io.github.tunaseckin.outofsight.shield.DecoyCorrector;
+import io.github.tunaseckin.outofsight.shield.DecoyService;
+import io.github.tunaseckin.outofsight.shield.HiddenIndex;
+import io.github.tunaseckin.outofsight.shield.ShieldIndexer;
+import io.github.tunaseckin.outofsight.xray.XrayAudit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -22,7 +22,7 @@ import org.jetbrains.annotations.NotNull;
  *
  * <p>The modules represent two different kinds of defence:
  * <ul>
- *   <li>{@link lab.aclab.shield.BlockEntityShield} - against information cheats.
+ *   <li>{@link io.github.tunaseckin.outofsight.shield.BlockEntityShield} - against information cheats.
  *       They cannot be detected, so the data is simply not sent.</li>
  *   <li>{@link XrayAudit} - measures what still leaks, and <em>proves</em>
  *       whether the data left the server.</li>
@@ -30,7 +30,7 @@ import org.jetbrains.annotations.NotNull;
  *       detectable; this validates them with latency compensation.</li>
  * </ul>
  */
-public final class AclabPlugin extends JavaPlugin implements Listener {
+public final class OutOfSightPlugin extends JavaPlugin implements Listener {
 
     /** Should match anti-xray's {@code max-block-height}. */
     private static final int MAX_SCAN_Y = 128;
@@ -89,7 +89,7 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(this, this);
         getServer().getScheduler().runTaskTimer(this, reachCheck::tick, 1L, 1L);
 
-        getLogger().info("aclab enabled - see /aclab");
+        getLogger().info("OutOfSight enabled - see /outofsight");
     }
 
     @EventHandler
@@ -108,11 +108,11 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
             return true;
         }
         if (args.length == 0) {
-            player.sendMessage("§7/aclab xray [chunks] §8- audit outgoing chunk packets");
-            player.sendMessage("§7/aclab reachsim <distance> §8- test reach with synthetic input");
-            player.sendMessage("§7/aclab reachdebug §8- log the measured distance of every hit");
-            player.sendMessage("§7/aclab hidechest §8- place a buried chest (base finding test)");
-            player.sendMessage("§7/aclab shield §8- toggle the buried block entity shield");
+            player.sendMessage("§7/outofsight xray [chunks] §8- audit outgoing chunk packets");
+            player.sendMessage("§7/outofsight reachsim <distance> §8- test reach with synthetic input");
+            player.sendMessage("§7/outofsight reachdebug §8- log the measured distance of every hit");
+            player.sendMessage("§7/outofsight hidechest §8- place a buried chest (base finding test)");
+            player.sendMessage("§7/outofsight shield §8- toggle the buried block entity shield");
             return true;
         }
 
@@ -163,7 +163,7 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
             }
             case "reachsim" -> {
                 if (args.length < 2) {
-                    player.sendMessage("§cUsage: /aclab reachsim <distance>");
+                    player.sendMessage("§cUsage: /outofsight reachsim <distance>");
                     return true;
                 }
                 simulateReach(player, parseDouble(args[1], 3.0));
@@ -187,7 +187,7 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
         double cy = eye.getY() + dir.getY() * distance;
         double cz = eye.getZ() + dir.getZ() * distance;
 
-        double measured = lab.aclab.reach.ReachMath.distanceToBox(
+        double measured = io.github.tunaseckin.outofsight.reach.ReachMath.distanceToBox(
                 eye.getX(), eye.getY(), eye.getZ(),
                 cx - 0.3, cy - 0.9, cz - 0.3,
                 cx + 0.3, cy + 0.9, cz + 0.3);
@@ -237,8 +237,8 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
         world.getBlockAt(cx, cy + 2, cz).setType(org.bukkit.Material.DIAMOND_ORE, false);
 
         xrayAudit.watch(world, java.util.List.of(
-                new lab.aclab.xray.XrayAudit.WatchPos(cx, cy, cz, "chest", "Chest"),
-                new lab.aclab.xray.XrayAudit.WatchPos(cx, cy + 2, cz, "diamond_ore",
+                new io.github.tunaseckin.outofsight.xray.XrayAudit.WatchPos(cx, cy, cz, "chest", "Chest"),
+                new io.github.tunaseckin.outofsight.xray.XrayAudit.WatchPos(cx, cy + 2, cz, "diamond_ore",
                         "Diamond ore (control)")));
 
         player.sendMessage("§8§m                                        ");

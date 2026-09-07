@@ -1,4 +1,4 @@
-package lab.aclab.reach;
+package io.github.tunaseckin.outofsight.reach;
 
 /**
  * Ring buffer of an entity's recent bounding boxes.

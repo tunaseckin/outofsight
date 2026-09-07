@@ -8,7 +8,7 @@ import mc from 'minecraft-protocol';
 
 const client = mc.createClient({
   host: '127.0.0.1', port: 25565,
-  username: 'aclab_decoy', auth: 'offline', version: '1.21.11',
+  username: 'oos_decoy', auth: 'offline', version: '1.21.11',
 });
 
 const entities = [];          // {cx, cz, x, y, z}

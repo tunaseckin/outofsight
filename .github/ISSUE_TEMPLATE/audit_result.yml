@@ -1,11 +1,11 @@
 name: Audit result
-description: Share what /aclab xray measured on your server
+description: Share what /outofsight xray measured on your server
 labels: [audit-result]
 body:
   - type: markdown
     attributes:
       value: |
-        `/aclab xray 16` measures what your chunk packets actually leak,
+        `/outofsight xray 16` measures what your chunk packets actually leak,
         independent of which anti-xray you run. Sharing the numbers helps build a
         picture of how servers are really configured in practice.
 
