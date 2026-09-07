@@ -60,13 +60,12 @@ Two things decide delivery:
    clients do not draw block entities much past this range either, so withholding
    the distant ones costs an honest player nothing.
 2. Line of sight. Distance alone lets someone standing on a hill collect the
-   contents of a base buried under it. A ray from the player's eye answers the
-   question that actually matters.
+   contents of a base buried under it. A ray from the player's eye settles whether
+   anything is in the way.
 
-An earlier version hid a container only when all six of its neighbours were solid.
-That protected almost nothing: a chest anyone can open has air above it, so it was
-never enclosed. The enclosure test survives as a cheap filter that skips the ray
-for blocks sealed in stone.
+A block with six solid neighbours cannot have a line of sight, so that cheap test
+runs first and skips the ray for anything sealed in stone. Enclosure on its own
+would be a poor rule, since a chest anyone can open has air above it.
 
 The ray only runs for containers not yet delivered, and a player who has not moved
 in a world that has not changed is skipped entirely. Walking into a base with fifty
