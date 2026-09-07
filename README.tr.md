@@ -125,16 +125,30 @@ Sandik        y=58  blok=SIZDI(chest)                      block-entity=SIZDI
 Elmas cevheri y=60  blok=gizlendi(deepslate_redstone_ore)  block-entity=yok
 ```
 
-Cevher obfuscate edildi, sandığa hiç dokunulmadı. Sebep yapısal: sandığın NBT'si
-chunk paketinde **ayrı bir block entity listesinde** gider. Blok state'i karartılıp
-block entity bırakılsa istemci desenkron olur, bu yüzden Paper block entity'si olan
-blokları hiç obfuscate etmez. `chest` ve `ender_chest`'in varsayılan listede
-bulunması pratikte etkisizdir.
+Sandık chunk paketine **iki kez** girer: bir blok state olarak, bir de ayrı bir
+block entity listesindeki kayıt olarak. Anti-xray blok state'leri üzerinde çalışır,
+dolayısıyla o liste koordinatlarla birlikte olduğu gibi çıkar.
 
-| Hedef | Anti-xray'in etkisi |
-|---|---|
-| Cevherler | Çalışıyor — 913 cevherden 1'i gerçek |
-| Sandık / spawner / varil | **Sıfır** — konum olduğu gibi gider |
+Aynı deney, iki engine mode için ayrı ayrı (kalkan kapalı):
+
+```
+engine-mode 1
+  chest        block=hidden(stone)                block-entity=LEAKED
+  diamond ore  block=hidden(stone)                block-entity=none
+
+engine-mode 2
+  chest        block=LEAKED(chest)                block-entity=LEAKED
+  diamond ore  block=hidden(deepslate_copper_ore) block-entity=none
+```
+
+Cevher her iki modda da gizleniyor. Sandık her iki modda da konumunu ele veriyor.
+Mode 1 en azından bloğu taşa çeviriyor; cevherler için daha güçlü olan mode 2 onu
+bile yapmıyor.
+
+| Hedef | engine-mode 1 | engine-mode 2 |
+|---|---|---|
+| Cevherler | gizleniyor | gizleniyor (913'te 1 gerçek) |
+| Sandık / spawner / varil | blok gizli, **konum sızıyor** | **ikisi de sızıyor** |
 
 Üs bulma (Block ESP, chunk finder) tam olarak bu boşlukta çalışır.
 

@@ -11,19 +11,26 @@ Paper ships anti-xray, and for ores it works well. Measured on a test server wit
 `engine-mode: 2`, an X-ray user sees roughly **196,000 "ores" of which 215 are
 real** — about 1 in 900. Ore X-ray is effectively dead.
 
-Chests are a different story. Paper's anti-xray **does not touch blocks that have
-a block entity**, and this is structural rather than an oversight: a chest's data
-travels in a separate block-entity list inside the chunk packet. Obfuscating the
-block state while leaving that list would desync the client, so Paper leaves both
-alone. Having `chest` in the default `hidden-blocks` list has no practical effect.
+Chests are a different story. A chest goes into the chunk packet twice, once as a
+block state and once as an entry in a separate block-entity list. Anti-xray works
+on block states, so that list goes out untouched with the coordinates in it.
 
-A controlled experiment makes it plain — two blocks in the same stone shell, both
-fully enclosed, both in the default hidden list:
+The same experiment, a chest and a diamond ore sealed in one stone shell, both in
+the default `hidden-blocks` list, run once per engine mode:
 
 ```
-chest        y=58  block=LEAKED(chest)                    block-entity=LEAKED
-diamond ore  y=60  block=hidden(deepslate_redstone_ore)   block-entity=none
+engine-mode 1
+  chest        block=hidden(stone)                block-entity=LEAKED
+  diamond ore  block=hidden(stone)                block-entity=none
+
+engine-mode 2
+  chest        block=LEAKED(chest)                block-entity=LEAKED
+  diamond ore  block=hidden(deepslate_copper_ore) block-entity=none
 ```
+
+The ore is hidden either way. The chest gives its position away either way. Mode 1
+at least replaces the block with stone; mode 2, the stronger mode for ores, does
+not even do that.
 
 Base finding (Block ESP, chunk finders) lives in exactly this gap.
 
