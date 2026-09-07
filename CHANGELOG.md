@@ -5,6 +5,10 @@
 First public build. Not yet tested by anyone other than the author.
 
 ### Shield
+- Off by default, so installing the plugin changes nothing until you turn it on.
+- `shield.test-mode` limits the shield to holders of `outofsight.shielded`, and
+  `/outofsight testme` grants that permission without a permissions plugin, so an
+  admin can verify on themselves before covering a live server.
 - Removes containers a player cannot see from outgoing chunk packets, both the
   block-entity record and the block state.
 - Default deny: a container is sent only once the main thread decides the player

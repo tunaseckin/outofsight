@@ -55,7 +55,8 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
                 getConfig().getInt("shield.decoy-block-entity-type", -1),
                 getConfig().getInt("shield.decoy-chunk-interval", 4));
         shield = new BlockEntityShield(this,
-                getServer().getWorlds().get(0).getMinHeight(), hiddenIndex, decoys);
+                getServer().getWorlds().get(0).getMinHeight(), hiddenIndex, decoys,
+                getConfig().getBoolean("shield.test-mode", false));
 
         corrector = new DecoyCorrector(this, decoys,
                 getConfig().getInt("shield.decoy-correction-radius-chunks", 3));
@@ -78,9 +79,14 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
         long deliverTicks = Math.max(1L, getConfig().getLong("shield.deliver-interval-ticks", 5L));
         getServer().getScheduler().runTaskTimer(this, indexer::sweep, deliverTicks, deliverTicks);
 
-        if (getConfig().getBoolean("shield.enabled", true)) {
+        if (getConfig().getBoolean("shield.enabled", false)) {
             shield.toggle();
-            getLogger().info("shield on (config: shield.enabled)");
+            getLogger().info(getConfig().getBoolean("shield.test-mode", false)
+                    ? "shield on, test mode: only players with outofsight.shielded are affected"
+                    : "shield on for everyone");
+        } else {
+            getLogger().info("shield off. Auditing works regardless; "
+                    + "set shield.enabled to turn it on.");
         }
         PacketEvents.getAPI().getEventManager().registerListener(shield);
         PacketEvents.getAPI().getEventManager().registerListener(xrayAudit);
@@ -92,9 +98,18 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
         getLogger().info("OutOfSight enabled - see /outofsight");
     }
 
+    @EventHandler(priority = org.bukkit.event.EventPriority.LOWEST)
+    public void onJoin(org.bukkit.event.player.PlayerJoinEvent event) {
+        if (testers.contains(event.getPlayer().getUniqueId())) {
+            applyTestPermission(event.getPlayer());
+        }
+    }
+
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         reachCheck.forget(event.getPlayer());
+        testAttachments.remove(event.getPlayer().getUniqueId());
+        // The tester's choice survives; only the attachment goes.
         corrector.forget(event.getPlayer());
         indexer.forget(event.getPlayer());
         xrayAudit.stop(event.getPlayer());
@@ -113,6 +128,7 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
             player.sendMessage("§7/outofsight reachdebug §8- log the measured distance of every hit");
             player.sendMessage("§7/outofsight hidechest §8- place a buried chest (base finding test)");
             player.sendMessage("§7/outofsight shield §8- toggle the buried block entity shield");
+            player.sendMessage("§7/outofsight testme §8- shield yourself only, for testing");
             return true;
         }
 
@@ -148,6 +164,7 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
                 player.sendMessage("§7Counters reset.");
                 getLogger().info("[perf] reset");
             }
+            case "testme" -> toggleTestPermission(player);
             case "shield" -> {
                 boolean on = shield.toggle();
                 player.sendMessage(on
@@ -285,6 +302,48 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
                 + "," + originZ;
         player.sendMessage("§b" + msg);
         getLogger().info("[stress] " + msg);
+    }
+
+    /** Attachments granting the test permission, one per online player. */
+    private final java.util.Map<java.util.UUID, org.bukkit.permissions.PermissionAttachment>
+            testAttachments = new java.util.HashMap<>();
+
+    /**
+     * Who asked to be shielded, kept across sessions.
+     *
+     * <p>An attachment dies with the connection, but seeing the shield work means
+     * relogging, since chunk packets are only sent on join. Dropping the choice at
+     * that moment would make the command useless.
+     */
+    private final java.util.Set<java.util.UUID> testers = new java.util.HashSet<>();
+
+    /**
+     * Grants or revokes the test permission for the caller.
+     *
+     * <p>Test mode needs a permission, and a small server often has no permissions
+     * plugin to grant one with. Without this, trying the shield safely would mean
+     * installing another plugin first, which is a strange thing to ask of someone
+     * who only wants to know whether this one works.
+     */
+    private void toggleTestPermission(Player player) {
+        if (testers.remove(player.getUniqueId())) {
+            var existing = testAttachments.remove(player.getUniqueId());
+            if (existing != null) {
+                player.removeAttachment(existing);
+            }
+            player.sendMessage("§7No longer shielded. Other players are unaffected either way.");
+            return;
+        }
+        testers.add(player.getUniqueId());
+        applyTestPermission(player);
+        player.sendMessage("§aShielded. §7Relog, then check you can still find and open");
+        player.sendMessage("§7your own containers. Nobody else is affected while");
+        player.sendMessage("§7shield.test-mode is on.");
+    }
+
+    private void applyTestPermission(Player player) {
+        testAttachments.computeIfAbsent(player.getUniqueId(), k -> player.addAttachment(this,
+                io.github.tunaseckin.outofsight.shield.ShieldIndexer.SHIELDED_PERMISSION, true));
     }
 
     /** Reads block names from config, warning about unrecognised ones. */

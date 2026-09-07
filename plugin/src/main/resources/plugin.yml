@@ -9,9 +9,12 @@ website: https://github.com/tunaseckin/outofsight
 commands:
   outofsight:
     description: OutOfSight administration
-    usage: /outofsight <xray|shield|hidechest|reachdebug|reachsim|stress|perf>
+    usage: /outofsight <xray|shield|testme|hidechest|reachdebug|reachsim|stress|perf>
     permission: outofsight.admin
     aliases: [oos]
 permissions:
   outofsight.admin:
     default: op
+  outofsight.shielded:
+    description: While shield.test-mode is on, the shield applies only to holders
+    default: false

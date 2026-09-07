@@ -45,6 +45,9 @@ public final class BlockEntityShield extends PacketListenerAbstract {
     /** Toggleable for A/B testing; off by default. */
     private volatile boolean enabled;
 
+    /** When on, only players holding {@code outofsight.shielded} are affected. */
+    private final boolean testMode;
+
     // Measurement: the shield runs on network threads, so this time shows up as
     // latency rather than TPS. Main-thread cost is measured in the sweep.
     private final java.util.concurrent.atomic.AtomicLong packets =
@@ -73,12 +76,13 @@ public final class BlockEntityShield extends PacketListenerAbstract {
     }
 
     public BlockEntityShield(Plugin plugin, int worldMinY, HiddenIndex index,
-                             DecoyService decoys) {
+                             DecoyService decoys, boolean testMode) {
         super(PacketListenerPriority.HIGH);
         this.plugin = plugin;
         this.worldMinY = worldMinY;
         this.index = index;
         this.decoys = decoys;
+        this.testMode = testMode;
     }
 
     public boolean toggle() {
@@ -94,6 +98,12 @@ public final class BlockEntityShield extends PacketListenerAbstract {
     public void onPacketSend(PacketSendEvent event) {
         if (!enabled || event.getPacketType() != PacketType.Play.Server.CHUNK_DATA) {
             return;
+        }
+        if (testMode) {
+            java.util.UUID viewer = event.getUser().getUUID();
+            if (viewer == null || !index.isShielded(viewer)) {
+                return; // Test mode: this player sees vanilla behaviour.
+            }
         }
         long started = System.nanoTime();
         packets.incrementAndGet();

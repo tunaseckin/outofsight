@@ -43,6 +43,15 @@ Block ESP and chunk finders work in that gap.
 
 ### Shield
 
+Off by default. Installing this plugin changes nothing about what your players see
+until you turn the shield on, and the audit works either way without modifying a
+single packet.
+
+Before switching it on for everyone, `shield.test-mode` limits it to players
+holding `outofsight.shielded`. Run `/outofsight testme`, relog, and check you can
+still find and open your own containers. Nobody else is affected. A small server
+often has no permissions plugin, so that command grants the permission itself.
+
 Removes containers a player cannot see from outgoing chunk packets. It drops the
 block-entity record and replaces the block state with a neighbouring block. Both
 steps are needed, since dropping only the record still renders a chest, and
@@ -141,6 +150,7 @@ All require `outofsight.admin` (op by default).
 | `/outofsight xray [chunks]` | Audit outgoing chunk packets for leaks |
 | `/outofsight hidechest` | Place a buried chest + control ore, then relog to test |
 | `/outofsight shield` | Toggle the shield |
+| `/outofsight testme` | Shield yourself only, for testing |
 | `/outofsight reachdebug` | Log the measured distance of every hit |
 | `/outofsight reachsim <d>` | Show where the reach threshold sits |
 | `/outofsight stress <n>` | Build a dense field of buried chests for load testing |

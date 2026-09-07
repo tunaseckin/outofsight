@@ -44,6 +44,16 @@ Block ESP ve chunk tarayıcıları tam o boşlukta çalışıyor.
 
 ### Kalkan
 
+Varsayılan olarak kapalı. Bu eklentiyi kurmak, sen kalkanı açana kadar
+oyuncularının gördüğü hiçbir şeyi değiştirmiyor, ve denetim tek bir pakete bile
+dokunmadan iki durumda da çalışıyor.
+
+Herkese açmadan önce `shield.test-mode`, kalkanı yalnızca `outofsight.shielded`
+iznine sahip oyunculara uyguluyor. `/outofsight testme` çalıştır, çık-gir yap, ve
+kendi kaplarını hâlâ bulup açabildiğini kontrol et. Başka kimse etkilenmiyor.
+Küçük sunucuların çoğunda izin eklentisi olmadığı için o komut izni kendisi
+veriyor.
+
 Oyuncunun göremediği kapları giden chunk paketinden çıkarıyor. Block entity
 kaydını atıyor ve blok state'ini komşu bir blokla değiştiriyor. İkisi birden
 gerekli: sadece kaydı atmak bloğu yine sandık olarak çizdirir, sadece bloğu
@@ -143,6 +153,7 @@ Hepsi `outofsight.admin` gerektiriyor (varsayılan olarak op). Kısayol: `/oos`.
 | `/outofsight xray [chunk]` | Giden chunk paketlerini sızıntı için denetler |
 | `/outofsight hidechest` | Gömülü sandık + kontrol cevheri koyar, sonra çık-gir |
 | `/outofsight shield` | Kalkanı açar/kapatır |
+| `/outofsight testme` | Kalkanı sadece kendine uygular, test için |
 | `/outofsight reachdebug` | Her vuruşun ölçülen mesafesini yazar |
 | `/outofsight reachsim <d>` | Reach eşiğinin nerede olduğunu gösterir |
 | `/outofsight stress <n>` | Yük testi için yoğun bir gömülü sandık alanı kurar |

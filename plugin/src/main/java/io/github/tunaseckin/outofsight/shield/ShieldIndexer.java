@@ -44,6 +44,9 @@ public final class ShieldIndexer implements Listener {
             BlockFace.UP, BlockFace.DOWN, BlockFace.NORTH,
             BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST};
 
+    /** Held by players the shield applies to while test mode is on. */
+    public static final String SHIELDED_PERMISSION = "outofsight.shielded";
+
     private final Plugin plugin;
     private final HiddenIndex index;
     private final int sweepRadius;
@@ -116,6 +119,18 @@ public final class ShieldIndexer implements Listener {
     }
 
     // --- events -----------------------------------------------------------
+
+    /**
+     * Records the permission before the first chunk goes out.
+     *
+     * <p>The sweep would catch up a fraction of a second later, but the first
+     * chunk burst is exactly the part an admin is testing.
+     */
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onJoin(org.bukkit.event.player.PlayerJoinEvent event) {
+        index.setShielded(event.getPlayer().getUniqueId(),
+                event.getPlayer().hasPermission(SHIELDED_PERMISSION));
+    }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onChunkLoad(ChunkLoadEvent event) {
@@ -282,6 +297,7 @@ public final class ShieldIndexer implements Listener {
 
     private void doSweep() {
         for (Player player : plugin.getServer().getOnlinePlayers()) {
+            index.setShielded(player.getUniqueId(), player.hasPermission(SHIELDED_PERMISSION));
             Location loc = player.getLocation();
             World world = player.getWorld();
 

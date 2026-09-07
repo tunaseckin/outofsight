@@ -150,6 +150,31 @@ public final class HiddenIndex {
 
     public void forgetPlayer(UUID player) {
         delivered.remove(player);
+        shielded.remove(player);
+    }
+
+    // --- test mode --------------------------------------------------------
+
+    /**
+     * Players the shield currently applies to while test mode is on.
+     *
+     * <p>Permissions can only be read on the main thread, so the answer is cached
+     * here for the network thread. Without test mode an admin has to switch the
+     * shield on for everyone at once to find out whether it works, which is not
+     * something anyone should do to a server with players on it.
+     */
+    private final Set<UUID> shielded = ConcurrentHashMap.newKeySet();
+
+    public void setShielded(UUID player, boolean value) {
+        if (value) {
+            shielded.add(player);
+        } else {
+            shielded.remove(player);
+        }
+    }
+
+    public boolean isShielded(UUID player) {
+        return shielded.contains(player);
     }
 
     public int size() {

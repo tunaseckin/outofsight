@@ -1,9 +1,16 @@
 # OutOfSight configuration
 
 shield:
-  # Remove fully buried containers from outgoing chunk packets.
-  # With this off the plugin acts only as a measurement tool.
-  enabled: true
+  # Remove containers a player cannot see from outgoing chunk packets.
+  # Off by default, so installing this changes nothing until you decide to.
+  # Auditing works either way, and it modifies nothing.
+  enabled: false
+
+  # Apply the shield only to players holding outofsight.shielded.
+  # Grant it to yourself, check that you can still find and open your own
+  # containers, then turn this off to cover everyone. Testing on a live server
+  # should not mean switching it on for all your players at once.
+  test-mode: false
 
   # Containers farther than this from a player are left out of the chunk packet
   # and delivered once that player comes closer. Base finding scans at render
