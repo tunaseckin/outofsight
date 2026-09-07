@@ -187,6 +187,14 @@ Unit tests cover the reach math, weighted towards false-positive cases:
 cd plugin && gradle test
 ```
 
+## Credits
+
+Testers who reported a problem, or shared what their server actually leaked, are
+named here. If you filed something that changed the code, open a pull request
+adding yourself — or say so on the issue and it will be added.
+
+*(nobody yet — this is a new project)*
+
 ## License
 
 GPL-3.0. PacketEvents is GPL-3.0 and this plugin links against it, so the combined

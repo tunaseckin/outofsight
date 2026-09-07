@@ -1,0 +1,33 @@
+name: Audit result
+description: Share what /aclab xray measured on your server
+labels: [audit-result]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `/aclab xray 16` measures what your chunk packets actually leak,
+        independent of which anti-xray you run. Sharing the numbers helps build a
+        picture of how servers are really configured in practice.
+
+  - type: textarea
+    id: result
+    attributes:
+      label: Audit output
+      description: Paste the line from your server console or the in-game report.
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: antixray
+    attributes:
+      label: Which anti-xray were you running
+      placeholder: "Paper built-in, engine-mode 2 / a plugin / none"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Server version
+      placeholder: "Paper 1.21.11"

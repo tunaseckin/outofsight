@@ -1,0 +1,64 @@
+name: Bug report
+description: Something behaves incorrectly on your server
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports that something is **broken** are more useful than reports that it
+        works. The failure modes that matter most:
+
+        - a container that stays invisible after you dig to it
+        - a container you can see but cannot open
+        - a change in tick time after enabling the shield
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Steps someone else can follow. Coordinates help.
+    validations:
+      required: true
+
+  - type: textarea
+    id: perf
+    attributes:
+      label: Output of /aclab perf
+      description: Run it while the server is under normal load, then paste the result.
+      render: text
+
+  - type: input
+    id: version
+    attributes:
+      label: Server version
+      placeholder: "Paper 1.21.11 build 132"
+    validations:
+      required: true
+
+  - type: input
+    id: players
+    attributes:
+      label: Typical player count
+      placeholder: "around 25"
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Your shield config
+      description: The `shield:` section of config.yml.
+      render: yaml
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Relevant log lines
+      description: Anything from aclab or a stack trace.
+      render: text
