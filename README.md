@@ -43,29 +43,40 @@ Block ESP and chunk finders work in that gap.
 
 ### Shield
 
-Removes fully buried chests, spawners, furnaces and similar blocks from outgoing
-chunk packets. It drops the block-entity record and replaces the block state with a
-neighbouring block. Both steps are needed, since dropping only the record still
-renders a chest, and changing only the block leaves the position readable in the
-raw list.
+Removes containers a player cannot see from outgoing chunk packets. It drops the
+block-entity record and replaces the block state with a neighbouring block. Both
+steps are needed, since dropping only the record still renders a chest, and
+changing only the block leaves the position readable in the raw list.
 
-Enclosure is decided from a main-thread index rather than from the packet, for two
-reasons. A packet carries a single chunk column, so a block on a chunk border has
-neighbours you cannot see, about 23% of positions. And a decision made from the
-packet is only valid at send time, which leaves nobody to announce that the chest
-became visible once a player breaks the wall.
+The rule is default deny. A container goes out only once the main thread has
+decided this player may see it, which means being close enough and having an
+unobstructed line to it. A network thread cannot read the world, so it answers the
+one question it can answer alone: has this player been given this container yet?
 
-Revealing matters as much as hiding. When a player digs through to a chest the
-server only sends an update for the broken block, so the chest would stay stone on
-the client and the player could not see their own container. Every block change
-therefore re-evaluates its neighbours, and a position that became visible is
-dropped from the index and sent to nearby players as the real block.
+Two things decide delivery:
+
+1. Distance. Base finding is a long range attack by definition, since the cheat
+   loads chunks out to render distance and reads every container at once. Vanilla
+   clients do not draw block entities much past this range either, so withholding
+   the distant ones costs an honest player nothing.
+2. Line of sight. Distance alone lets someone standing on a hill collect the
+   contents of a base buried under it. A ray from the player's eye answers the
+   question that actually matters.
+
+An earlier version hid a container only when all six of its neighbours were solid.
+That protected almost nothing: a chest anyone can open has air above it, so it was
+never enclosed. The enclosure test survives as a cheap filter that skips the ray
+for blocks sealed in stone.
+
+The ray only runs for containers not yet delivered, and a player who has not moved
+in a world that has not changed is skipped entirely. Walking into a base with fifty
+chests pays for fifty rays once, then nothing.
 
 Events cannot catch every change, since commands, WorldEdit, pistons and flowing
-water produce no `BlockBreakEvent`. A periodic sweep runs alongside them and works
-in both directions: it hides newly buried blocks and reveals newly exposed ones. A
-chest left hidden by mistake means a player loses their items, which is what the
-sweep exists to prevent.
+water produce no `BlockBreakEvent`. A slower sweep re-reads the block entities of
+nearby chunks, which both finds containers nothing reported and drops ones that no
+longer exist. A container left hidden by mistake means a player loses their items,
+which is what that sweep exists to prevent.
 
 ### Decoys (optional, off by default)
 
@@ -147,6 +158,7 @@ load than normal play, at roughly 400 to 700 chunk packets per second.
 | 20 bots, 256 buried chests | 25 838 | 866 | 14.9 | 0.84 ms | 8.94 / 20.00 |
 | 40 bots, 256 buried chests | 41 287 | 1 466 | 13.5 | 0.79 ms | 10.76 / 20.00 |
 | 20 bots, decoys on (1 in 4) | 22 325 | 6 209 | 18.4 | 0.68 ms | 9.11 / 20.00 |
+| 20 bots, line of sight rule | 21 380 | 1 807 | 19.9 | 0.44 ms | 10.30 / 20.00 |
 
 The shield runs on network threads, so it costs latency rather than TPS. At 40
 bots that is roughly 0.9% of one core. The only main-thread work is the sweep, at
@@ -162,6 +174,8 @@ every run, with no exceptions.
 - Tested up to 40 bots on one world. A 100+ player server has not been measured.
 - Chest-type registry ids are learned from live packets. If that fails, set
   `shield.decoy-block-entity-type` manually.
+- A container comes into view up to `deliver-interval-ticks` late, a quarter of a
+  second by default. Lower it if that is visible on your server.
 - The reach check does not replace a real anticheat. No movement simulation, so no
   fly, speed or noslow detection.
 - `engine-mode: 2` costs CPU on its own. Measure your tick time before enabling it.

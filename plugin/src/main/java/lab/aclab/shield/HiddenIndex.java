@@ -2,23 +2,44 @@ package lab.aclab.shield;
 
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Index of block entity positions to hide.
+ * Where the protected containers are, and which of them a given player may see.
  *
- * <p>Why enclosure is decided here rather than from the packet: a packet carries
- * a single chunk column, so a block on a chunk border has neighbours that are
- * not available - about a quarter of positions would go undecided. A decision
- * read from the packet is also only valid at send time; when a player breaks the
- * wall there is nobody left to announce that the chest became visible.
+ * <p>The rule that decides hiding is distance, not enclosure. Base finding is a
+ * long range attack by definition: the cheat loads chunks out to render distance
+ * and reads every container in them at once. A legitimate player is standing next
+ * to the chest they care about. Vanilla clients do not draw block entities much
+ * past this range either, so withholding the distant ones costs an honest player
+ * nothing and costs a scanner everything.
  *
- * <p>The index is written on the main thread (where the world can be read) and
- * read on network threads, hence the concurrent structures.
+ * <p>Enclosure still matters as a second reason to hide, because a chest walled
+ * into stone is invisible to a player standing beside it. Hiding on enclosure
+ * alone was the earlier design and it protected almost nothing: a chest anyone
+ * can actually open has air above it, so it was never enclosed.
+ *
+ * <p>Written on the main thread, read on network threads.
  */
 public final class HiddenIndex {
 
-    private final Map<Long, Set<Long>> byChunk = new ConcurrentHashMap<>();
+    /** Every protected container position, grouped by chunk. */
+    private final Map<Long, Set<Long>> containers = new ConcurrentHashMap<>();
+
+    /** The subset with no visible face. */
+    private final Map<Long, Set<Long>> enclosed = new ConcurrentHashMap<>();
+
+    /**
+     * What has already been sent to each player.
+     *
+     * <p>This is what the network thread checks. Whether a player may see a
+     * container needs the world, which only the main thread can read, so the
+     * decision is made there and recorded here. The packet then answers a
+     * question it can answer on its own: has this player been given this
+     * container yet?
+     */
+    private final Map<UUID, Set<Long>> delivered = new ConcurrentHashMap<>();
 
     public static long chunkKey(int chunkX, int chunkZ) {
         return ((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL);
@@ -29,32 +50,6 @@ public final class HiddenIndex {
         return ((long) (x & 0x3FFFFFF) << 38) | ((long) (z & 0x3FFFFFF) << 12) | (y & 0xFFF);
     }
 
-    public void hide(int x, int y, int z) {
-        byChunk.computeIfAbsent(chunkKey(x >> 4, z >> 4), k -> ConcurrentHashMap.newKeySet())
-                .add(posKey(x, y, z));
-    }
-
-    /** Drops a position from the index; returns {@code true} if it was present. */
-    public boolean reveal(int x, int y, int z) {
-        Set<Long> set = byChunk.get(chunkKey(x >> 4, z >> 4));
-        return set != null && set.remove(posKey(x, y, z));
-    }
-
-    public boolean isHidden(int x, int y, int z) {
-        Set<Long> set = byChunk.get(chunkKey(x >> 4, z >> 4));
-        return set != null && set.contains(posKey(x, y, z));
-    }
-
-    public boolean hasChunk(int chunkX, int chunkZ) {
-        Set<Long> set = byChunk.get(chunkKey(chunkX, chunkZ));
-        return set != null && !set.isEmpty();
-    }
-
-    public void clearChunk(int chunkX, int chunkZ) {
-        byChunk.remove(chunkKey(chunkX, chunkZ));
-    }
-
-    /** Decodes coordinates from a chunk key. */
     public static int chunkXOf(long key) {
         return (int) (key >> 32);
     }
@@ -75,12 +70,89 @@ public final class HiddenIndex {
         return (int) (key << 26 >> 38);
     }
 
-    /** Snapshot for the periodic sweep; the index may change while iterating. */
-    public Map<Long, Set<Long>> snapshot() {
-        return Map.copyOf(byChunk);
+    // --- container membership ---------------------------------------------
+
+    public void addContainer(int x, int y, int z) {
+        containers.computeIfAbsent(chunkKey(x >> 4, z >> 4), k -> ConcurrentHashMap.newKeySet())
+                .add(posKey(x, y, z));
+    }
+
+    public void removeContainer(int x, int y, int z) {
+        long chunk = chunkKey(x >> 4, z >> 4);
+        Set<Long> set = containers.get(chunk);
+        if (set != null) {
+            set.remove(posKey(x, y, z));
+        }
+        setEnclosed(x, y, z, false);
+    }
+
+    public boolean isContainer(int x, int y, int z) {
+        Set<Long> set = containers.get(chunkKey(x >> 4, z >> 4));
+        return set != null && set.contains(posKey(x, y, z));
+    }
+
+    public boolean hasChunk(int chunkX, int chunkZ) {
+        Set<Long> set = containers.get(chunkKey(chunkX, chunkZ));
+        return set != null && !set.isEmpty();
+    }
+
+    public Set<Long> containersIn(int chunkX, int chunkZ) {
+        return containers.getOrDefault(chunkKey(chunkX, chunkZ), Set.of());
+    }
+
+    public void clearChunk(int chunkX, int chunkZ) {
+        long key = chunkKey(chunkX, chunkZ);
+        containers.remove(key);
+        enclosed.remove(key);
+    }
+
+    // --- enclosure --------------------------------------------------------
+
+    /** @return true when the flag changed */
+    public boolean setEnclosed(int x, int y, int z, boolean value) {
+        long chunk = chunkKey(x >> 4, z >> 4);
+        long pos = posKey(x, y, z);
+        if (value) {
+            return enclosed.computeIfAbsent(chunk, k -> ConcurrentHashMap.newKeySet()).add(pos);
+        }
+        Set<Long> set = enclosed.get(chunk);
+        return set != null && set.remove(pos);
+    }
+
+    public boolean isEnclosed(int x, int y, int z) {
+        Set<Long> set = enclosed.get(chunkKey(x >> 4, z >> 4));
+        return set != null && set.contains(posKey(x, y, z));
+    }
+
+    // --- delivery bookkeeping ---------------------------------------------
+
+    public boolean isDelivered(UUID player, int x, int y, int z) {
+        Set<Long> set = delivered.get(player);
+        return set != null && set.contains(posKey(x, y, z));
+    }
+
+    /** @return true when this is the first delivery of that position */
+    public boolean markDelivered(UUID player, long pos) {
+        return delivered.computeIfAbsent(player, k -> ConcurrentHashMap.newKeySet()).add(pos);
+    }
+
+    /**
+     * Drops everything not in {@code keep}, so a container left behind is hidden
+     * again the next time its chunk is sent. The client keeps what it already
+     * has, so this changes nothing until then, which is the point.
+     */
+    public void retainDelivered(UUID player, Set<Long> keep) {
+        Set<Long> set = delivered.get(player);
+        if (set != null) {
+            set.retainAll(keep);
+        }
+    }
+
+    public void forgetPlayer(UUID player) {
+        delivered.remove(player);
     }
 
     public int size() {
-        return byChunk.values().stream().mapToInt(Set::size).sum();
+        return containers.values().stream().mapToInt(Set::size).sum();
     }
 }

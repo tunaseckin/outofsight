@@ -65,15 +65,18 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
         }
 
         indexer = new ShieldIndexer(this, hiddenIndex,
-                getConfig().getDouble("shield.reveal-range", 128.0),
                 getConfig().getInt("shield.sweep-radius-chunks", 4),
+                getConfig().getDouble("shield.hide-beyond-blocks", 48.0),
                 readProtectedTypes());
         getServer().getPluginManager().registerEvents(indexer, this);
         getServer().getScheduler().runTask(this, indexer::indexLoadedChunks);
 
         // Safety net for changes that events do not catch.
-        long sweepTicks = Math.max(20L, getConfig().getLong("shield.sweep-interval-ticks", 40L));
-        getServer().getScheduler().runTaskTimer(this, indexer::sweep, sweepTicks, sweepTicks);
+        long discoverTicks = Math.max(20L, getConfig().getLong("shield.discover-interval-ticks", 40L));
+        getServer().getScheduler().runTaskTimer(this, indexer::discover, discoverTicks, discoverTicks);
+
+        long deliverTicks = Math.max(1L, getConfig().getLong("shield.deliver-interval-ticks", 5L));
+        getServer().getScheduler().runTaskTimer(this, indexer::sweep, deliverTicks, deliverTicks);
 
         if (getConfig().getBoolean("shield.enabled", true)) {
             shield.toggle();
@@ -93,6 +96,7 @@ public final class AclabPlugin extends JavaPlugin implements Listener {
     public void onQuit(PlayerQuitEvent event) {
         reachCheck.forget(event.getPlayer());
         corrector.forget(event.getPlayer());
+        indexer.forget(event.getPlayer());
         xrayAudit.stop(event.getPlayer());
     }
 

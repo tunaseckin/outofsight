@@ -1,20 +1,23 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## 0.1.0, unreleased
 
 First public build. Not yet tested by anyone other than the author.
 
 ### Shield
-- Removes fully buried chests, spawners, barrels, furnaces and similar blocks from
-  outgoing chunk packets — both the block-entity record and the block state.
-- Enclosure is decided from a main-thread index, so chunk borders are covered
-  (roughly 23% of positions a packet-only decision would miss).
-- Reveals a block as soon as it becomes visible, so players can still see and open
-  their own containers.
-- Periodic symmetric sweep as a safety net for changes that fire no event
-  (commands, WorldEdit, pistons, flowing water).
-- Never touches a chunk column carrying biome data — losing it would be worse than
-  leaving the leak.
+- Removes containers a player cannot see from outgoing chunk packets, both the
+  block-entity record and the block state.
+- Default deny: a container is sent only once the main thread decides the player
+  may see it, which needs distance and an unobstructed line of sight.
+- Hiding on enclosure alone was tried first and protected almost nothing, because
+  a chest anyone can open has air above it. The enclosure test now only skips the
+  ray for blocks sealed in stone.
+- The ray runs once per container per player, and a player who has not moved in a
+  world that has not changed is skipped entirely.
+- A slower sweep re-reads nearby chunks to find containers no event reported, and
+  drops ones that no longer exist.
+- Never touches a chunk column carrying biome data, since losing it would be worse
+  than leaving the leak.
 
 ### Decoys (off by default)
 - Plants deterministic fake buried chests to poison base-finding data.

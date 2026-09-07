@@ -5,12 +5,20 @@ shield:
   # With this off the plugin acts only as a measurement tool.
   enabled: true
 
-  # How far, in blocks, a revealed block is sent to players.
-  reveal-range: 128.0
+  # Containers farther than this from a player are left out of the chunk packet
+  # and delivered once that player comes closer. Base finding scans at render
+  # distance, so this is where it loses. Vanilla clients do not draw block
+  # entities much past this range either, so an honest player loses nothing.
+  hide-beyond-blocks: 48.0
 
-  # Interval of the safety-net sweep that catches changes events miss.
-  # Lowering it shortens reaction time and raises server load. Minimum 20.
-  sweep-interval-ticks: 40
+  # How often to look for containers that events did not report. A container
+  # appearing a second late costs nothing, so this can stay slow. Minimum 20.
+  discover-interval-ticks: 40
+
+  # How often to deliver containers a player has come close enough to see.
+  # Walking into a room and waiting for the chests is noticeable, so keep this
+  # low. Minimum 1.
+  deliver-interval-ticks: 5
 
   # Chunk radius around a player covered by the safety-net sweep.
   # Widening it extends coverage and raises sweep cost quadratically.

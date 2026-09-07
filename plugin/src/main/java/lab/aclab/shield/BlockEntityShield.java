@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Removes fully buried containers from outgoing chunk packets.
+ * Removes containers a player cannot see from outgoing chunk packets.
  *
  * <p>This was the measured gap: Paper's anti-xray obfuscates ores but never
  * touches blocks that carry a block entity. A chest's NBT travels in a separate
@@ -29,6 +29,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * enough, because a {@code chest} block with no block entity still renders as a
  * chest, and changing only the block is not enough either, because a cheat reads
  * the raw list.
+ *
+ * <p>What counts as unseeable is decided in {@link HiddenIndex}: distance first,
+ * enclosure second.
  */
 public final class BlockEntityShield extends PacketListenerAbstract {
 
@@ -36,6 +39,7 @@ public final class BlockEntityShield extends PacketListenerAbstract {
     private final int worldMinY;
     private final HiddenIndex index;
     private final DecoyService decoys;
+
     private final AtomicBoolean warnedBiome = new AtomicBoolean();
 
     /** Toggleable for A/B testing; off by default. */
@@ -144,7 +148,7 @@ public final class BlockEntityShield extends PacketListenerAbstract {
                 decoys.learnChestType(tile.getType());
             }
 
-            if (!index.isHidden(baseX + lx, y, baseZ + lz)) {
+            if (!shouldHide(event.getUser().getUUID(), baseX + lx, y, baseZ + lz)) {
                 keep.add(tile);
                 continue;
             }
@@ -179,6 +183,21 @@ public final class BlockEntityShield extends PacketListenerAbstract {
         wrapper.setColumn(rebuilt);
         event.markForReEncode(true);
         modified.incrementAndGet();
+    }
+
+    /**
+     * Whether this container should be left out of the packet for this player.
+     *
+     * <p>Default deny: a container goes out only once the main thread has decided
+     * this player may see it. Judging that needs the world, to measure distance
+     * and to trace a line of sight, and a network thread cannot read the world.
+     * So the packet answers the one question it can answer alone.
+     */
+    private boolean shouldHide(java.util.UUID player, int x, int y, int z) {
+        if (!index.isContainer(x, y, z)) {
+            return false;
+        }
+        return player == null || !index.isDelivered(player, x, y, z);
     }
 
     /**
