@@ -1,0 +1,51 @@
+# aclab yapilandirmasi
+
+shield:
+  # Tamamen gomulu sandik/spawner konumlarini giden chunk paketinden sil.
+  # Kapatirsan eklenti yalnizca olcum araci olarak calisir.
+  enabled: true
+
+  # Ortaya cikan blogun kac blok yaricapindaki oyunculara gonderilecegi.
+  reveal-range: 128.0
+
+  # Olaylarin kacirdigi degisiklikler icin guvenlik agi taramasinin araligi.
+  # Dusurmek tepki suresini kisaltir, sunucu yukunu artirir. En az 20.
+  sweep-interval-ticks: 40
+
+  # Guvenlik agi taramasinin oyuncu cevresinde kapsadigi chunk yaricapi.
+  # Buyutmek kapsami genisletir, tarama maliyetini kare olarak artirir.
+  sweep-radius-chunks: 4
+
+  # Gizlenecek blok turleri. Bir us sandiktan ibaret degil - firin, huni ve
+  # isaret feneri de "burada biri yasiyor" isaretidir.
+  protected-blocks:
+    - chest
+    - trapped_chest
+    - barrel
+    - ender_chest
+    - spawner
+    - shulker_box
+    - furnace
+    - blast_furnace
+    - smoker
+    - hopper
+    - brewing_stand
+    - beacon
+    - enchanting_table
+
+  # Chunk basina konacak sahte gomulu sandik sayisi (tuzak). 0 = kapali.
+  # Gizleme "bulamazsin" der, tuzak "buldugun da yalan" der. Tasin icine
+  # gomulu olduklari icin mesru oyuncuya gorunmezler.
+  decoys-per-chunk: 0
+
+  # Oyuncu bu yaricapa girince tuzaklar sessizce gercek bloga doner.
+  decoy-correction-radius-chunks: 3
+
+  # Sandik block entity'sinin kayit numarasi. -1 = gercek paketlerden ogren.
+  # Surume ozgu bir degerdir; otomatik ogrenme yeterli olmazsa elle verilebilir.
+  decoy-block-entity-type: -1
+
+  # Her kacinci chunk'a tuzak konacagi. Hilecinin verisini kullanilamaz kilmak
+  # icin tuzaklarin seyrek olmasi yeter; her chunk'a koymak her paketin yeniden
+  # serialize edilmesi demektir ve asil maliyet oradadir.
+  decoy-chunk-interval: 4

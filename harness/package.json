@@ -1,0 +1,10 @@
+{
+  "name": "aclab-harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Yerel test sunucusuna baglanan bassiz dogrulama istemcisi",
+  "type": "module",
+  "dependencies": {
+    "minecraft-protocol": "^1.68.0"
+  }
+}

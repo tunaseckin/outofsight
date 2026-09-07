@@ -1,0 +1,16 @@
+name: aclab
+version: '${version}'
+main: lab.aclab.AclabPlugin
+api-version: '1.21'
+depend: [packetevents]
+description: Stops base finding - hides buried containers from chunk packets
+author: tunaseckin
+website: https://github.com/tunaseckin/aclab
+commands:
+  aclab:
+    description: aclab administration
+    usage: /aclab <xray|shield|hidechest|reachdebug|reachsim|stress|perf>
+    permission: aclab.admin
+permissions:
+  aclab.admin:
+    default: op

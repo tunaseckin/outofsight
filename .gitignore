@@ -1,0 +1,16 @@
+# Gradle
+plugin/build/
+plugin/.gradle/
+.gradle/
+
+# Node
+harness/node_modules/
+harness/package-lock.json
+
+# Test sunucusu - uretilen her sey
+server/
+!server/run.sh
+!server/stop.sh
+
+# macOS
+.DS_Store
