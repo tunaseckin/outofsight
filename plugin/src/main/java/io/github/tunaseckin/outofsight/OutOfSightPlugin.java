@@ -54,8 +54,7 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
                 getServer().getWorlds().get(0).getSeed(),
                 getConfig().getInt("shield.decoy-block-entity-type", -1),
                 getConfig().getInt("shield.decoy-chunk-interval", 4));
-        shield = new BlockEntityShield(this,
-                getServer().getWorlds().get(0).getMinHeight(), hiddenIndex, decoys,
+        shield = new BlockEntityShield(this, hiddenIndex, decoys,
                 getConfig().getBoolean("shield.test-mode", false));
 
         corrector = new DecoyCorrector(this, decoys,
@@ -351,7 +350,12 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
         java.util.Set<org.bukkit.Material> types = java.util.EnumSet.noneOf(org.bukkit.Material.class);
         for (String name : getConfig().getStringList("shield.protected-blocks")) {
             org.bukkit.Material material = org.bukkit.Material.matchMaterial(name);
-            if (material == null) {
+            if (material == org.bukkit.Material.SHULKER_BOX) {
+                // Only the undyed box is called shulker_box. Most boxes on a
+                // server are dyed, and listing all seventeen is easy to get
+                // wrong, so the one name covers every colour.
+                types.addAll(org.bukkit.Tag.SHULKER_BOXES.getValues());
+            } else if (material == null) {
                 getLogger().warning("shield.protected-blocks: unknown block '" + name + "'");
             } else {
                 types.add(material);
