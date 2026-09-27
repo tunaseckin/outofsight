@@ -39,6 +39,22 @@ First public build. Not yet tested by anyone other than the author.
 - Ping-compensated, measured to the bounding box, with violation decay.
 - Range read from `ENTITY_INTERACTION_RANGE` rather than hardcoded.
 
+### Fixes
+- The shield read the world floor once at startup, from the Overworld (-64). In
+  the Nether and the End the floor is 0, so every edit there landed four sections
+  off: the container stayed visible and an unrelated block higher up was
+  overwritten in the player's view. The floor is now read per packet from the
+  player's world, and decoys use it too.
+- The index did not record which world a container was in. Unloading a chunk in
+  one dimension cleared the containers at the same chunk coordinates in every
+  other dimension, leaving them unprotected until the next sweep.
+- `shulker_box` in `protected-blocks` matched only the undyed box. It now covers
+  all colours.
+- Decoy correction remembered every chunk it had corrected for the whole session.
+  A chunk resent after walking away came back with its decoys and was never
+  corrected again, and a chunk that was not loaded on the first pass was skipped
+  for good. Correction now tracks only chunks in range, per world.
+
 ### Known findings
 - `budding_amethyst`, `spawner`, `barrel` and `trapped_chest` are absent from
   Paper's default `hidden-blocks` list and leak fully until added.

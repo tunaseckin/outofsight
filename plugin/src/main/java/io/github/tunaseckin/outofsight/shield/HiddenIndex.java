@@ -24,11 +24,17 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class HiddenIndex {
 
-    /** Every protected container position, grouped by chunk. */
-    private final Map<Long, Set<Long>> containers = new ConcurrentHashMap<>();
+    /**
+     * Every protected container position, grouped by world and then by chunk.
+     *
+     * <p>Keyed by world because chunk and block coordinates repeat across
+     * dimensions: without it, the Nether unloading chunk 0,0 would wipe the
+     * Overworld's containers in chunk 0,0 and leave them unprotected.
+     */
+    private final Map<UUID, Map<Long, Set<Long>>> containers = new ConcurrentHashMap<>();
 
-    /** The subset with no visible face. */
-    private final Map<Long, Set<Long>> enclosed = new ConcurrentHashMap<>();
+    /** The subset with no visible face, keyed the same way. */
+    private final Map<UUID, Map<Long, Set<Long>>> enclosed = new ConcurrentHashMap<>();
 
     /**
      * What has already been sent to each player.
@@ -70,57 +76,73 @@ public final class HiddenIndex {
         return (int) (key << 26 >> 38);
     }
 
-    // --- container membership ---------------------------------------------
-
-    public void addContainer(int x, int y, int z) {
-        containers.computeIfAbsent(chunkKey(x >> 4, z >> 4), k -> ConcurrentHashMap.newKeySet())
-                .add(posKey(x, y, z));
+    private static Set<Long> chunkSet(Map<UUID, Map<Long, Set<Long>>> map, UUID world,
+                                      int chunkX, int chunkZ) {
+        Map<Long, Set<Long>> chunks = map.get(world);
+        return chunks == null ? null : chunks.get(chunkKey(chunkX, chunkZ));
     }
 
-    public void removeContainer(int x, int y, int z) {
-        long chunk = chunkKey(x >> 4, z >> 4);
-        Set<Long> set = containers.get(chunk);
+    private static Set<Long> chunkSetOrCreate(Map<UUID, Map<Long, Set<Long>>> map, UUID world,
+                                              int chunkX, int chunkZ) {
+        return map.computeIfAbsent(world, k -> new ConcurrentHashMap<>())
+                .computeIfAbsent(chunkKey(chunkX, chunkZ), k -> ConcurrentHashMap.newKeySet());
+    }
+
+    // --- container membership ---------------------------------------------
+
+    public void addContainer(UUID world, int x, int y, int z) {
+        chunkSetOrCreate(containers, world, x >> 4, z >> 4).add(posKey(x, y, z));
+    }
+
+    public void removeContainer(UUID world, int x, int y, int z) {
+        Set<Long> set = chunkSet(containers, world, x >> 4, z >> 4);
         if (set != null) {
             set.remove(posKey(x, y, z));
         }
-        setEnclosed(x, y, z, false);
+        setEnclosed(world, x, y, z, false);
     }
 
-    public boolean isContainer(int x, int y, int z) {
-        Set<Long> set = containers.get(chunkKey(x >> 4, z >> 4));
+    public boolean isContainer(UUID world, int x, int y, int z) {
+        Set<Long> set = chunkSet(containers, world, x >> 4, z >> 4);
         return set != null && set.contains(posKey(x, y, z));
     }
 
-    public boolean hasChunk(int chunkX, int chunkZ) {
-        Set<Long> set = containers.get(chunkKey(chunkX, chunkZ));
+    public boolean hasChunk(UUID world, int chunkX, int chunkZ) {
+        Set<Long> set = chunkSet(containers, world, chunkX, chunkZ);
         return set != null && !set.isEmpty();
     }
 
-    public Set<Long> containersIn(int chunkX, int chunkZ) {
-        return containers.getOrDefault(chunkKey(chunkX, chunkZ), Set.of());
+    public Set<Long> containersIn(UUID world, int chunkX, int chunkZ) {
+        Set<Long> set = chunkSet(containers, world, chunkX, chunkZ);
+        return set != null ? set : Set.of();
     }
 
-    public void clearChunk(int chunkX, int chunkZ) {
+    public void clearChunk(UUID world, int chunkX, int chunkZ) {
         long key = chunkKey(chunkX, chunkZ);
-        containers.remove(key);
-        enclosed.remove(key);
+        Map<Long, Set<Long>> worldContainers = containers.get(world);
+        if (worldContainers != null) {
+            worldContainers.remove(key);
+        }
+        Map<Long, Set<Long>> worldEnclosed = enclosed.get(world);
+        if (worldEnclosed != null) {
+            worldEnclosed.remove(key);
+        }
     }
 
     // --- enclosure --------------------------------------------------------
 
     /** @return true when the flag changed */
-    public boolean setEnclosed(int x, int y, int z, boolean value) {
-        long chunk = chunkKey(x >> 4, z >> 4);
+    public boolean setEnclosed(UUID world, int x, int y, int z, boolean value) {
         long pos = posKey(x, y, z);
         if (value) {
-            return enclosed.computeIfAbsent(chunk, k -> ConcurrentHashMap.newKeySet()).add(pos);
+            return chunkSetOrCreate(enclosed, world, x >> 4, z >> 4).add(pos);
         }
-        Set<Long> set = enclosed.get(chunk);
+        Set<Long> set = chunkSet(enclosed, world, x >> 4, z >> 4);
         return set != null && set.remove(pos);
     }
 
-    public boolean isEnclosed(int x, int y, int z) {
-        Set<Long> set = enclosed.get(chunkKey(x >> 4, z >> 4));
+    public boolean isEnclosed(UUID world, int x, int y, int z) {
+        Set<Long> set = chunkSet(enclosed, world, x >> 4, z >> 4);
         return set != null && set.contains(posKey(x, y, z));
     }
 
@@ -146,6 +168,15 @@ public final class HiddenIndex {
         if (set != null) {
             set.retainAll(keep);
         }
+    }
+
+    /**
+     * Drops everything a player was given. Called on a world change: positions
+     * carry no world, so a container delivered in one dimension must not count
+     * as delivered for the same coordinates in another.
+     */
+    public void clearDelivered(UUID player) {
+        delivered.remove(player);
     }
 
     public void forgetPlayer(UUID player) {
@@ -178,6 +209,8 @@ public final class HiddenIndex {
     }
 
     public int size() {
-        return containers.values().stream().mapToInt(Set::size).sum();
+        return containers.values().stream()
+                .flatMap(chunks -> chunks.values().stream())
+                .mapToInt(Set::size).sum();
     }
 }

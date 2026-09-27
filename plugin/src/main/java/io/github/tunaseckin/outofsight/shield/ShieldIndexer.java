@@ -139,7 +139,14 @@ public final class ShieldIndexer implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkUnload(ChunkUnloadEvent event) {
-        index.clearChunk(event.getChunk().getX(), event.getChunk().getZ());
+        index.clearChunk(event.getWorld().getUID(), event.getChunk().getX(), event.getChunk().getZ());
+    }
+
+    /** What was delivered in the old world says nothing about the new one. */
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onChangedWorld(org.bukkit.event.player.PlayerChangedWorldEvent event) {
+        index.clearDelivered(event.getPlayer().getUniqueId());
+        lastCheck.remove(event.getPlayer().getUniqueId());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -185,6 +192,7 @@ public final class ShieldIndexer implements Listener {
      * holds few of them.
      */
     private void indexChunk(Chunk chunk) {
+        UUID world = chunk.getWorld().getUID();
         Set<Long> present = new HashSet<>();
         for (BlockState state : chunk.getTileEntities(false)) {
             Block block = state.getBlock();
@@ -193,9 +201,9 @@ public final class ShieldIndexer implements Listener {
                 reevaluate(block);
             }
         }
-        for (long pos : Set.copyOf(index.containersIn(chunk.getX(), chunk.getZ()))) {
+        for (long pos : Set.copyOf(index.containersIn(world, chunk.getX(), chunk.getZ()))) {
             if (!present.contains(pos)) {
-                index.removeContainer(HiddenIndex.posXOf(pos), HiddenIndex.posYOf(pos),
+                index.removeContainer(world, HiddenIndex.posXOf(pos), HiddenIndex.posYOf(pos),
                         HiddenIndex.posZOf(pos));
             }
         }
@@ -206,17 +214,18 @@ public final class ShieldIndexer implements Listener {
         int x = block.getX();
         int y = block.getY();
         int z = block.getZ();
+        UUID world = block.getWorld().getUID();
 
         if (!protectedTypes.contains(block.getType())) {
-            if (index.isContainer(x, y, z)) {
-                index.removeContainer(x, y, z);
+            if (index.isContainer(world, x, y, z)) {
+                index.removeContainer(world, x, y, z);
             }
             return;
         }
-        index.addContainer(x, y, z);
+        index.addContainer(world, x, y, z);
 
         boolean nowEnclosed = enclosed(block);
-        boolean changed = index.setEnclosed(x, y, z, nowEnclosed);
+        boolean changed = index.setEnclosed(world, x, y, z, nowEnclosed);
         if (changed && !nowEnclosed) {
             // A wall came down. Deliver it now instead of waiting for the sweep.
             deliver(block);
@@ -254,7 +263,9 @@ public final class ShieldIndexer implements Listener {
      * a container appearing a second late costs nothing.
      */
     public void discover() {
-        Set<Long> reindexed = new HashSet<>();
+        // Keyed by world too: two players at the same chunk coordinates in
+        // different dimensions must both get their chunk re-read.
+        Set<String> reindexed = new HashSet<>();
         for (Player player : plugin.getServer().getOnlinePlayers()) {
             Location loc = player.getLocation();
             long posKey = HiddenIndex.posKey(loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
@@ -272,7 +283,8 @@ public final class ShieldIndexer implements Listener {
                 for (int dz = -sweepRadius; dz <= sweepRadius; dz++) {
                     int cx = rcx + dx;
                     int cz = rcz + dz;
-                    if (reindexed.add(HiddenIndex.chunkKey(cx, cz)) && world.isChunkLoaded(cx, cz)) {
+                    if (reindexed.add(world.getUID() + ":" + HiddenIndex.chunkKey(cx, cz))
+                            && world.isChunkLoaded(cx, cz)) {
                         indexChunk(world.getChunkAt(cx, cz));
                     }
                 }
@@ -300,6 +312,7 @@ public final class ShieldIndexer implements Listener {
             index.setShielded(player.getUniqueId(), player.hasPermission(SHIELDED_PERMISSION));
             Location loc = player.getLocation();
             World world = player.getWorld();
+            UUID worldId = world.getUID();
 
             int pcx = loc.getBlockX() >> 4;
             int pcz = loc.getBlockZ() >> 4;
@@ -312,7 +325,7 @@ public final class ShieldIndexer implements Listener {
                     if (!world.isChunkLoaded(cx, cz)) {
                         continue;
                     }
-                    for (long pos : index.containersIn(cx, cz)) {
+                    for (long pos : index.containersIn(worldId, cx, cz)) {
                         int x = HiddenIndex.posXOf(pos);
                         int y = HiddenIndex.posYOf(pos);
                         int z = HiddenIndex.posZOf(pos);
@@ -320,7 +333,7 @@ public final class ShieldIndexer implements Listener {
                         double distSq = NumberConversions.square(loc.getBlockX() - x)
                                 + NumberConversions.square(loc.getBlockY() - y)
                                 + NumberConversions.square(loc.getBlockZ() - z);
-                        if (distSq > hideBeyondSq || index.isEnclosed(x, y, z)) {
+                        if (distSq > hideBeyondSq || index.isEnclosed(worldId, x, y, z)) {
                             continue;
                         }
                         Block block = world.getBlockAt(x, y, z);
@@ -328,7 +341,7 @@ public final class ShieldIndexer implements Listener {
                         if (!known) {
                             // Enclosed blocks cannot have a line of sight, so the
                             // cheap test spares the expensive one.
-                            if (index.isEnclosed(x, y, z) || !hasLineOfSight(player, block)) {
+                            if (index.isEnclosed(worldId, x, y, z) || !hasLineOfSight(player, block)) {
                                 continue;
                             }
                         }

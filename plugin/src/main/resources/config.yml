@@ -39,6 +39,7 @@ shield:
     - barrel
     - ender_chest
     - spawner
+    # Covers every colour of shulker box, not only the undyed one.
     - shulker_box
     - furnace
     - blast_furnace
