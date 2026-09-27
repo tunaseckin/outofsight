@@ -30,16 +30,29 @@ jobs:
 
   # Starts a real Paper server and checks, from a client's point of view, what
   # the shield sends and withholds. See harness/e2e.mjs.
+  #
+  # The same jar runs on every version. Newer servers get ViaVersion and
+  # ViaBackwards so the test client, which speaks up to 26.1, can join; that
+  # also checks the shield survives Via's translation.
   e2e:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { mc: '1.21.11', packetevents: v2.13.0, java: '21', client: '1.21.11', via: 'no' }
+          - { mc: '26.1.2', packetevents: v2.14.0, java: '25', client: '26.1', via: 'yes' }
+          - { mc: '26.2', packetevents: v2.14.0, java: '25', client: '26.1', via: 'yes' }
+          - { mc: '26.3', packetevents: v2.14.0, java: '25', client: '26.1', via: 'yes' }
+    name: e2e (${{ matrix.mc }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: ${{ matrix.java }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -50,17 +63,21 @@ jobs:
       - name: Prepare test server
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash harness/ci-setup.sh server "$(ls dist/*.jar | head -n1)"
+        run: >
+          bash harness/ci-setup.sh server "$(ls dist/*.jar | head -n1)"
+          ${{ matrix.mc }} ${{ matrix.packetevents }} ${{ matrix.via }}
       - name: Install harness
         working-directory: harness
         run: npm install --no-audit --no-fund
       - name: Run end-to-end checks
+        env:
+          E2E_CLIENT_VERSION: ${{ matrix.client }}
         run: node harness/e2e.mjs server
       - name: Keep server logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: server-logs
+          name: server-logs-${{ matrix.mc }}
           path: server/logs/
           if-no-files-found: ignore
 

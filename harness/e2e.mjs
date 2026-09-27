@@ -6,6 +6,7 @@
 // entity list, later block updates and entity spawns.
 //
 // Usage: node e2e.mjs <server dir>   (the dir holds paper.jar and plugins/)
+// E2E_CLIENT_VERSION picks the protocol the client speaks (default 1.21.11).
 // Exit code 0 means every check passed.
 
 import { spawn } from 'node:child_process';
@@ -15,7 +16,7 @@ import prismarineRegistry from 'prismarine-registry';
 import { Vec3 } from 'vec3';
 
 const SERVER_DIR = process.argv[2] ?? 'server';
-const VERSION = '1.21.11';
+const VERSION = process.env.E2E_CLIENT_VERSION ?? '1.21.11';
 const BOT = 'oos_probe';
 const registry = prismarineRegistry(VERSION);
 const Chunk = prismarineChunk(registry);

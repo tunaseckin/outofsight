@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Prepares a Paper test server for e2e.mjs: downloads Paper and PacketEvents,
 # writes a superflat offline-mode config and turns the shield on.
-# Usage: ci-setup.sh <server dir> <plugin jar>
+# Usage: ci-setup.sh <server dir> <plugin jar> [mc version] [packetevents tag] [via yes|no]
 set -euo pipefail
 
 DIR=${1:?server dir}
 JAR=${2:?plugin jar}
-MC=1.21.11
-PE_TAG=v2.13.0
+MC=${3:-1.21.11}
+PE_TAG=${4:-v2.13.0}
+VIA=${5:-no}
 UA="outofsight-ci (https://github.com/tunaseckin/outofsight)"
 
 mkdir -p "$DIR/plugins/OutOfSight"
@@ -25,8 +26,24 @@ fi
 echo "Paper: $url"
 curl -fsSL -A "$UA" -o "$DIR/paper.jar" "$url"
 
-# PacketEvents: the Spigot/Paper jar from the matching GitHub release.
-gh release download "$PE_TAG" -R retrooper/packetevents -p '*spigot*.jar' -D "$DIR/plugins"
+# Downloads one plugin jar from a GitHub release (latest when TAG is empty),
+# preferring an asset whose name matches PREFER and skipping sources/javadoc.
+fetch_jar() {
+  local repo=$1 tag=$2 prefer=$3 tmp
+  tmp=$(mktemp -d)
+  gh release download ${tag:+"$tag"} -R "$repo" -p '*.jar' -D "$tmp"
+  local pick
+  pick=$(ls "$tmp"/*.jar | grep -viE 'sources|javadoc' | grep -iE "$prefer" | head -n1 || true)
+  [ -n "$pick" ] || pick=$(ls "$tmp"/*.jar | grep -viE 'sources|javadoc' | head -n1)
+  echo "$repo ${tag:-latest}: $(basename "$pick")"
+  cp "$pick" "$DIR/plugins/"
+}
+
+fetch_jar retrooper/packetevents "$PE_TAG" 'spigot|paper|bukkit'
+if [ "$VIA" = "yes" ]; then
+  fetch_jar ViaVersion/ViaVersion "" 'viaversion'
+  fetch_jar ViaVersion/ViaBackwards "" 'viabackwards'
+fi
 ls -l "$DIR/plugins"
 
 cp "$JAR" "$DIR/plugins/"
