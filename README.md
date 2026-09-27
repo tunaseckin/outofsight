@@ -191,8 +191,13 @@ this plugin, without conflict.
 
 ## Requirements
 
-- Paper 1.21.11
-- [PacketEvents](https://github.com/retrooper/packetevents) 2.13.0+
+- Paper (or a fork such as Purpur) 1.21.11, 26.1, 26.2 or 26.3
+- [PacketEvents](https://github.com/retrooper/packetevents) 2.13.0+ on 1.21.11, 2.14.0+ on 26.x
+- Java 21, or Java 25 on 26.x
+
+CI runs the end-to-end test on 1.21.11, 26.1.2, 26.2 and 26.3 with the same
+jar. On 26.x it joins through ViaVersion and ViaBackwards, so those are covered
+too. Folia and Spigot are not supported.
 
 ## Commands
 

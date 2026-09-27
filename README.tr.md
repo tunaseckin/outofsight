@@ -197,8 +197,13 @@ yan yana sorunsuz çalışıyor.
 
 ## Gereksinimler
 
-- Paper 1.21.11
-- [PacketEvents](https://github.com/retrooper/packetevents) 2.13.0+
+- Paper (ya da Purpur gibi bir çatalı) 1.21.11, 26.1, 26.2 veya 26.3
+- [PacketEvents](https://github.com/retrooper/packetevents): 1.21.11'de 2.13.0+, 26.x'te 2.14.0+
+- Java 21, 26.x'te Java 25
+
+CI uçtan uca testi aynı jar ile 1.21.11, 26.1.2, 26.2 ve 26.3'te çalıştırıyor.
+26.x'te ViaVersion ve ViaBackwards üzerinden bağlandığı için onlar da test edilmiş
+oluyor. Folia ve Spigot desteklenmiyor.
 
 ## Komutlar
 
