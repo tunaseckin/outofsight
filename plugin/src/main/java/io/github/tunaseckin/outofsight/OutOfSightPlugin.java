@@ -5,6 +5,7 @@ import io.github.tunaseckin.outofsight.reach.ReachCheck;
 import io.github.tunaseckin.outofsight.shield.BlockEntityShield;
 import io.github.tunaseckin.outofsight.shield.DecoyCorrector;
 import io.github.tunaseckin.outofsight.shield.DecoyService;
+import io.github.tunaseckin.outofsight.shield.EntityShield;
 import io.github.tunaseckin.outofsight.shield.HiddenIndex;
 import io.github.tunaseckin.outofsight.shield.ShieldIndexer;
 import io.github.tunaseckin.outofsight.xray.XrayAudit;
@@ -40,6 +41,7 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
     private BlockEntityShield shield;
     private HiddenIndex hiddenIndex;
     private ShieldIndexer indexer;
+    private EntityShield entityShield;
     private DecoyCorrector corrector;
 
     @Override
@@ -54,8 +56,7 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
                 getServer().getWorlds().get(0).getSeed(),
                 getConfig().getInt("shield.decoy-block-entity-type", -1),
                 getConfig().getInt("shield.decoy-chunk-interval", 4));
-        shield = new BlockEntityShield(this,
-                getServer().getWorlds().get(0).getMinHeight(), hiddenIndex, decoys,
+        shield = new BlockEntityShield(this, hiddenIndex, decoys,
                 getConfig().getBoolean("shield.test-mode", false));
 
         corrector = new DecoyCorrector(this, decoys,
@@ -79,6 +80,16 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
         long deliverTicks = Math.max(1L, getConfig().getLong("shield.deliver-interval-ticks", 5L));
         getServer().getScheduler().runTaskTimer(this, indexer::sweep, deliverTicks, deliverTicks);
 
+        entityShield = new EntityShield(this, shield, hiddenIndex,
+                getConfig().getBoolean("shield.test-mode", false),
+                readProtectedEntities(),
+                getConfig().getDouble("shield.entity-check-radius", 96.0),
+                getConfig().getInt("shield.entity-rays-per-sweep", 64));
+        if (!entityShield.isEmpty()) {
+            getServer().getPluginManager().registerEvents(entityShield, this);
+            getServer().getScheduler().runTaskTimer(this, entityShield::sweep, deliverTicks, deliverTicks);
+        }
+
         if (getConfig().getBoolean("shield.enabled", false)) {
             shield.toggle();
             getLogger().info(getConfig().getBoolean("shield.test-mode", false)
@@ -89,11 +100,21 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
                     + "set shield.enabled to turn it on.");
         }
         PacketEvents.getAPI().getEventManager().registerListener(shield);
+        if (!entityShield.isEmpty()) {
+            PacketEvents.getAPI().getEventManager().registerListener(entityShield);
+        }
         PacketEvents.getAPI().getEventManager().registerListener(xrayAudit);
         PacketEvents.getAPI().getEventManager().registerListener(reachCheck);
 
         getServer().getPluginManager().registerEvents(this, this);
         getServer().getScheduler().runTaskTimer(this, reachCheck::tick, 1L, 1L);
+
+        // Once every world is loaded, say what Paper's own settings leave open.
+        getServer().getScheduler().runTask(this, () -> {
+            for (String finding : new ConfigAdvisor(this).check(shield.isEnabled())) {
+                getLogger().warning("[advise] " + finding);
+            }
+        });
 
         getLogger().info("OutOfSight enabled - see /outofsight");
     }
@@ -129,6 +150,7 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
             player.sendMessage("§7/outofsight hidechest §8- place a buried chest (base finding test)");
             player.sendMessage("§7/outofsight shield §8- toggle the buried block entity shield");
             player.sendMessage("§7/outofsight testme §8- shield yourself only, for testing");
+            player.sendMessage("§7/outofsight advise §8- check Paper's anti-xray and seed settings");
             return true;
         }
 
@@ -165,6 +187,15 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
                 getLogger().info("[perf] reset");
             }
             case "testme" -> toggleTestPermission(player);
+            case "advise" -> {
+                var findings = new ConfigAdvisor(this).check(shield.isEnabled());
+                if (findings.isEmpty()) {
+                    player.sendMessage("§aNothing to report.");
+                }
+                for (String finding : findings) {
+                    player.sendMessage("§e- §7" + finding);
+                }
+            }
             case "shield" -> {
                 boolean on = shield.toggle();
                 player.sendMessage(on
@@ -350,8 +381,28 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
     private java.util.Set<org.bukkit.Material> readProtectedTypes() {
         java.util.Set<org.bukkit.Material> types = java.util.EnumSet.noneOf(org.bukkit.Material.class);
         for (String name : getConfig().getStringList("shield.protected-blocks")) {
+            if (name.startsWith("#")) {
+                // A block tag such as #beds, so new variants added by an update
+                // are covered without editing the list.
+                org.bukkit.NamespacedKey key = org.bukkit.NamespacedKey.fromString(
+                        name.substring(1).toLowerCase(java.util.Locale.ROOT));
+                org.bukkit.Tag<org.bukkit.Material> tag = key == null ? null
+                        : getServer().getTag(org.bukkit.Tag.REGISTRY_BLOCKS, key,
+                                org.bukkit.Material.class);
+                if (tag == null) {
+                    getLogger().warning("shield.protected-blocks: unknown block tag '" + name + "'");
+                } else {
+                    types.addAll(tag.getValues());
+                }
+                continue;
+            }
             org.bukkit.Material material = org.bukkit.Material.matchMaterial(name);
-            if (material == null) {
+            if (material == org.bukkit.Material.SHULKER_BOX) {
+                // Only the undyed box is called shulker_box. Most boxes on a
+                // server are dyed, and listing all seventeen is easy to get
+                // wrong, so the one name covers every colour.
+                types.addAll(org.bukkit.Tag.SHULKER_BOXES.getValues());
+            } else if (material == null) {
                 getLogger().warning("shield.protected-blocks: unknown block '" + name + "'");
             } else {
                 types.add(material);
@@ -359,6 +410,41 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
         }
         if (types.isEmpty()) {
             getLogger().warning("shield.protected-blocks is empty - the shield will hide nothing.");
+        }
+        return types;
+    }
+
+    /**
+     * Reads entity names from config, warning about unrecognised ones.
+     *
+     * <p>{@code chest_boat} stands for every chest boat and raft, one entity
+     * type per wood since 1.21.2. Players are refused: hiding a player also
+     * drops them from the tab list.
+     */
+    private java.util.Set<org.bukkit.entity.EntityType> readProtectedEntities() {
+        java.util.Set<org.bukkit.entity.EntityType> types =
+                java.util.EnumSet.noneOf(org.bukkit.entity.EntityType.class);
+        for (String raw : getConfig().getStringList("shield.protected-entities")) {
+            String name = raw.toLowerCase(java.util.Locale.ROOT);
+            if (name.equals("chest_boat")) {
+                for (org.bukkit.entity.EntityType type : org.bukkit.entity.EntityType.values()) {
+                    if (type.getEntityClass() != null
+                            && org.bukkit.entity.ChestBoat.class.isAssignableFrom(type.getEntityClass())) {
+                        types.add(type);
+                    }
+                }
+                continue;
+            }
+            org.bukkit.NamespacedKey key = org.bukkit.NamespacedKey.fromString(name);
+            org.bukkit.entity.EntityType type = key == null ? null
+                    : org.bukkit.Registry.ENTITY_TYPE.get(key);
+            if (type == null) {
+                getLogger().warning("shield.protected-entities: unknown entity '" + raw + "'");
+            } else if (type == org.bukkit.entity.EntityType.PLAYER) {
+                getLogger().warning("shield.protected-entities: players cannot be hidden, skipped");
+            } else {
+                types.add(type);
+            }
         }
         return types;
     }

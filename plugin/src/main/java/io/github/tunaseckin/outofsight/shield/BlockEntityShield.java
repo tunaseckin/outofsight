@@ -11,10 +11,13 @@ import com.github.retrooper.packetevents.protocol.world.chunk.TileEntity;
 import com.github.retrooper.packetevents.protocol.world.states.WrappedBlockState;
 import com.github.retrooper.packetevents.protocol.world.states.type.StateTypes;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerChunkData;
+import org.bukkit.World;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -36,7 +39,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class BlockEntityShield extends PacketListenerAbstract {
 
     private final Plugin plugin;
-    private final int worldMinY;
     private final HiddenIndex index;
     private final DecoyService decoys;
 
@@ -75,11 +77,10 @@ public final class BlockEntityShield extends PacketListenerAbstract {
         planted.set(0);
     }
 
-    public BlockEntityShield(Plugin plugin, int worldMinY, HiddenIndex index,
+    public BlockEntityShield(Plugin plugin, HiddenIndex index,
                              DecoyService decoys, boolean testMode) {
         super(PacketListenerPriority.HIGH);
         this.plugin = plugin;
-        this.worldMinY = worldMinY;
         this.index = index;
         this.decoys = decoys;
         this.testMode = testMode;
@@ -115,13 +116,21 @@ public final class BlockEntityShield extends PacketListenerAbstract {
     }
 
     private void process(PacketSendEvent event) {
+        // The packet belongs to whatever world the player is in now. Section
+        // offsets depend on that world's floor, which is -64 in the Overworld
+        // but 0 in the Nether and the End: reading it once at startup put every
+        // edit in those dimensions four sections off.
+        World world = worldOf(event);
+        UUID worldId = world.getUID();
+        int minY = world.getMinHeight();
+
         WrapperPlayServerChunkData wrapper = new WrapperPlayServerChunkData(event);
         Column column = wrapper.getColumn();
         TileEntity[] tiles = column.getTileEntities();
         if (tiles == null) {
             tiles = new TileEntity[0];
         }
-        boolean anythingToHide = index.hasChunk(column.getX(), column.getZ());
+        boolean anythingToHide = index.hasChunk(worldId, column.getX(), column.getZ());
         // Returning early on an empty chunk missed most decoy sites: the vast
         // majority of chunks hold no block entity at all, and that is exactly
         // where decoys belong.
@@ -153,32 +162,32 @@ public final class BlockEntityShield extends PacketListenerAbstract {
 
             // Learn the type BEFORE hiding: if every nearby chest is hidden,
             // learning only from ones we keep would never run.
-            WrappedBlockState existing = stateAt(sections, lx, y, lz);
+            WrappedBlockState existing = stateAt(sections, minY, lx, y, lz);
             if (existing != null && existing.getType() == StateTypes.CHEST) {
                 decoys.learnChestType(tile.getType());
             }
 
-            if (!shouldHide(event.getUser().getUUID(), baseX + lx, y, baseZ + lz)) {
+            if (!shouldHide(event.getUser().getUUID(), worldId, baseX + lx, y, baseZ + lz)) {
                 keep.add(tile);
                 continue;
             }
             toHide.add(new int[]{lx, y, lz});
         }
 
-        List<int[]> toPlant = planDecoys(sections, column.getX(), column.getZ());
+        List<int[]> toPlant = planDecoys(sections, minY, column.getX(), column.getZ());
 
         if (toHide.isEmpty() && toPlant.isEmpty()) {
             return;
         }
 
         for (int[] pos : toHide) {
-            WrappedBlockState filler = fillerFor(sections, pos[0], pos[1], pos[2]);
+            WrappedBlockState filler = fillerFor(sections, minY, pos[0], pos[1], pos[2]);
             if (filler != null) {
-                setState(sections, pos[0], pos[1], pos[2], filler);
+                setState(sections, minY, pos[0], pos[1], pos[2], filler);
             }
         }
         for (int[] pos : toPlant) {
-            setState(sections, pos[0], pos[1], pos[2],
+            setState(sections, minY, pos[0], pos[1], pos[2],
                     WrappedBlockState.getDefaultState(StateTypes.CHEST));
             keep.add(new TileEntity((byte) (((pos[0] & 0xF) << 4) | (pos[2] & 0xF)),
                     (short) pos[1], decoys.chestTypeId(), new NBTCompound()));
@@ -196,6 +205,21 @@ public final class BlockEntityShield extends PacketListenerAbstract {
     }
 
     /**
+     * The world this packet's chunk belongs to.
+     *
+     * <p>The very first chunks after a join can go out before the connection is
+     * linked to a {@link Player}. Leaving those packets alone would leak exactly
+     * the burst a relog produces, so they fall back to the default world, where
+     * a joining player almost always is.
+     */
+    private World worldOf(PacketSendEvent event) {
+        if (event.getPlayer() instanceof Player player) {
+            return player.getWorld();
+        }
+        return plugin.getServer().getWorlds().get(0);
+    }
+
+    /**
      * Whether this container should be left out of the packet for this player.
      *
      * <p>Default deny: a container goes out only once the main thread has decided
@@ -203,8 +227,8 @@ public final class BlockEntityShield extends PacketListenerAbstract {
      * and to trace a line of sight, and a network thread cannot read the world.
      * So the packet answers the one question it can answer alone.
      */
-    private boolean shouldHide(java.util.UUID player, int x, int y, int z) {
-        if (!index.isContainer(x, y, z)) {
+    private boolean shouldHide(UUID player, UUID world, int x, int y, int z) {
+        if (!index.isContainer(world, x, y, z)) {
             return false;
         }
         return player == null || !index.isDelivered(player, x, y, z);
@@ -217,16 +241,16 @@ public final class BlockEntityShield extends PacketListenerAbstract {
      * exposed decoy would be visible to legitimate players too, which breaks the
      * asymmetry the defence rests on.
      */
-    private List<int[]> planDecoys(BaseChunk[] sections, int chunkX, int chunkZ) {
+    private List<int[]> planDecoys(BaseChunk[] sections, int minY, int chunkX, int chunkZ) {
         if (!decoys.ready() || !decoys.carriesDecoys(chunkX, chunkZ)) {
             return List.of();
         }
         List<int[]> chosen = new ArrayList<>(decoys.perChunk());
-        for (int[] candidate : decoys.candidates(chunkX, chunkZ, worldMinY, 60)) {
+        for (int[] candidate : decoys.candidates(chunkX, chunkZ, minY, 60)) {
             if (chosen.size() >= decoys.perChunk()) {
                 break;
             }
-            if (buriedSolid(sections, candidate[0], candidate[1], candidate[2])) {
+            if (buriedSolid(sections, minY, candidate[0], candidate[1], candidate[2])) {
                 chosen.add(candidate);
             }
         }
@@ -234,11 +258,11 @@ public final class BlockEntityShield extends PacketListenerAbstract {
     }
 
     /** Is the position and all six neighbours solid? Read from the packet itself. */
-    private boolean buriedSolid(BaseChunk[] sections, int lx, int y, int lz) {
+    private boolean buriedSolid(BaseChunk[] sections, int minY, int lx, int y, int lz) {
         int[][] offsets = {{0, 0, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 1, 0},
                 {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
         for (int[] o : offsets) {
-            WrappedBlockState state = stateAt(sections, lx + o[0], y + o[1], lz + o[2]);
+            WrappedBlockState state = stateAt(sections, minY, lx + o[0], y + o[1], lz + o[2]);
             if (state == null) {
                 return false;
             }
@@ -251,21 +275,22 @@ public final class BlockEntityShield extends PacketListenerAbstract {
     }
 
     /** Replacement block: the neighbour above, matching the surrounding stone. */
-    private WrappedBlockState fillerFor(BaseChunk[] sections, int lx, int y, int lz) {
-        WrappedBlockState above = stateAt(sections, lx, y + 1, lz);
-        return above != null ? above : stateAt(sections, lx, y - 1, lz);
+    private WrappedBlockState fillerFor(BaseChunk[] sections, int minY, int lx, int y, int lz) {
+        WrappedBlockState above = stateAt(sections, minY, lx, y + 1, lz);
+        return above != null ? above : stateAt(sections, minY, lx, y - 1, lz);
     }
 
-    private WrappedBlockState stateAt(BaseChunk[] sections, int lx, int y, int lz) {
-        int index = (y - worldMinY) >> 4;
+    private WrappedBlockState stateAt(BaseChunk[] sections, int minY, int lx, int y, int lz) {
+        int index = (y - minY) >> 4;
         if (index < 0 || index >= sections.length || sections[index] == null) {
             return null;
         }
         return sections[index].get(lx, y & 0xF, lz);
     }
 
-    private void setState(BaseChunk[] sections, int lx, int y, int lz, WrappedBlockState state) {
-        int index = (y - worldMinY) >> 4;
+    private void setState(BaseChunk[] sections, int minY, int lx, int y, int lz,
+                          WrappedBlockState state) {
+        int index = (y - minY) >> 4;
         if (index >= 0 && index < sections.length && sections[index] != null) {
             sections[index].set(lx, y & 0xF, lz, state);
         }

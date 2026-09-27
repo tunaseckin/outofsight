@@ -74,6 +74,14 @@ public final class ShieldIndexer implements Listener {
     /** Last position and world revision each player was evaluated against. */
     private final Map<UUID, long[]> lastCheck = new ConcurrentHashMap<>();
 
+    /**
+     * The same for delivery: eye position, world revision and index version.
+     *
+     * <p>When none of them changed, every container this player could be given
+     * has already been judged, so the rays would only repeat their answers.
+     */
+    private final Map<UUID, long[]> lastSweep = new ConcurrentHashMap<>();
+
     private final java.util.concurrent.atomic.AtomicLong sweeps =
             new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong sweepNanos =
@@ -139,7 +147,15 @@ public final class ShieldIndexer implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkUnload(ChunkUnloadEvent event) {
-        index.clearChunk(event.getChunk().getX(), event.getChunk().getZ());
+        index.clearChunk(event.getWorld().getUID(), event.getChunk().getX(), event.getChunk().getZ());
+    }
+
+    /** What was delivered in the old world says nothing about the new one. */
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onChangedWorld(org.bukkit.event.player.PlayerChangedWorldEvent event) {
+        index.clearDelivered(event.getPlayer().getUniqueId());
+        lastCheck.remove(event.getPlayer().getUniqueId());
+        lastSweep.remove(event.getPlayer().getUniqueId());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -185,6 +201,7 @@ public final class ShieldIndexer implements Listener {
      * holds few of them.
      */
     private void indexChunk(Chunk chunk) {
+        UUID world = chunk.getWorld().getUID();
         Set<Long> present = new HashSet<>();
         for (BlockState state : chunk.getTileEntities(false)) {
             Block block = state.getBlock();
@@ -193,9 +210,9 @@ public final class ShieldIndexer implements Listener {
                 reevaluate(block);
             }
         }
-        for (long pos : Set.copyOf(index.containersIn(chunk.getX(), chunk.getZ()))) {
+        for (long pos : Set.copyOf(index.containersIn(world, chunk.getX(), chunk.getZ()))) {
             if (!present.contains(pos)) {
-                index.removeContainer(HiddenIndex.posXOf(pos), HiddenIndex.posYOf(pos),
+                index.removeContainer(world, HiddenIndex.posXOf(pos), HiddenIndex.posYOf(pos),
                         HiddenIndex.posZOf(pos));
             }
         }
@@ -206,17 +223,21 @@ public final class ShieldIndexer implements Listener {
         int x = block.getX();
         int y = block.getY();
         int z = block.getZ();
+        UUID world = block.getWorld().getUID();
 
         if (!protectedTypes.contains(block.getType())) {
-            if (index.isContainer(x, y, z)) {
-                index.removeContainer(x, y, z);
+            if (index.isContainer(world, x, y, z)) {
+                index.removeContainer(world, x, y, z);
             }
             return;
         }
-        index.addContainer(x, y, z);
+        index.addContainer(world, x, y, z);
 
         boolean nowEnclosed = enclosed(block);
-        boolean changed = index.setEnclosed(x, y, z, nowEnclosed);
+        boolean changed = index.setEnclosed(world, x, y, z, nowEnclosed);
+        if (changed) {
+            worldRevision.incrementAndGet(); // Standing players need a fresh look.
+        }
         if (changed && !nowEnclosed) {
             // A wall came down. Deliver it now instead of waiting for the sweep.
             deliver(block);
@@ -254,7 +275,9 @@ public final class ShieldIndexer implements Listener {
      * a container appearing a second late costs nothing.
      */
     public void discover() {
-        Set<Long> reindexed = new HashSet<>();
+        // Keyed by world too: two players at the same chunk coordinates in
+        // different dimensions must both get their chunk re-read.
+        Set<String> reindexed = new HashSet<>();
         for (Player player : plugin.getServer().getOnlinePlayers()) {
             Location loc = player.getLocation();
             long posKey = HiddenIndex.posKey(loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
@@ -272,7 +295,8 @@ public final class ShieldIndexer implements Listener {
                 for (int dz = -sweepRadius; dz <= sweepRadius; dz++) {
                     int cx = rcx + dx;
                     int cz = rcz + dz;
-                    if (reindexed.add(HiddenIndex.chunkKey(cx, cz)) && world.isChunkLoaded(cx, cz)) {
+                    if (reindexed.add(world.getUID() + ":" + HiddenIndex.chunkKey(cx, cz))
+                            && world.isChunkLoaded(cx, cz)) {
                         indexChunk(world.getChunkAt(cx, cz));
                     }
                 }
@@ -298,8 +322,17 @@ public final class ShieldIndexer implements Listener {
     private void doSweep() {
         for (Player player : plugin.getServer().getOnlinePlayers()) {
             index.setShielded(player.getUniqueId(), player.hasPermission(SHIELDED_PERMISSION));
+            Location eye = player.getEyeLocation();
+            long[] state = {
+                    HiddenIndex.posKey(eye.getBlockX(), eye.getBlockY(), eye.getBlockZ()),
+                    worldRevision.get(), index.version(),
+                    player.getWorld().getUID().getMostSignificantBits()};
+            if (java.util.Arrays.equals(state, lastSweep.put(player.getUniqueId(), state))) {
+                continue; // Nothing moved and nothing changed.
+            }
             Location loc = player.getLocation();
             World world = player.getWorld();
+            UUID worldId = world.getUID();
 
             int pcx = loc.getBlockX() >> 4;
             int pcz = loc.getBlockZ() >> 4;
@@ -312,7 +345,7 @@ public final class ShieldIndexer implements Listener {
                     if (!world.isChunkLoaded(cx, cz)) {
                         continue;
                     }
-                    for (long pos : index.containersIn(cx, cz)) {
+                    for (long pos : index.containersIn(worldId, cx, cz)) {
                         int x = HiddenIndex.posXOf(pos);
                         int y = HiddenIndex.posYOf(pos);
                         int z = HiddenIndex.posZOf(pos);
@@ -320,7 +353,7 @@ public final class ShieldIndexer implements Listener {
                         double distSq = NumberConversions.square(loc.getBlockX() - x)
                                 + NumberConversions.square(loc.getBlockY() - y)
                                 + NumberConversions.square(loc.getBlockZ() - z);
-                        if (distSq > hideBeyondSq || index.isEnclosed(x, y, z)) {
+                        if (distSq > hideBeyondSq || index.isEnclosed(worldId, x, y, z)) {
                             continue;
                         }
                         Block block = world.getBlockAt(x, y, z);
@@ -328,7 +361,7 @@ public final class ShieldIndexer implements Listener {
                         if (!known) {
                             // Enclosed blocks cannot have a line of sight, so the
                             // cheap test spares the expensive one.
-                            if (index.isEnclosed(x, y, z) || !hasLineOfSight(player, block)) {
+                            if (index.isEnclosed(worldId, x, y, z) || !hasLineOfSight(player, block)) {
                                 continue;
                             }
                         }
@@ -358,16 +391,52 @@ public final class ShieldIndexer implements Listener {
      */
     private boolean hasLineOfSight(Player player, Block block) {
         Location eye = player.getEyeLocation();
-        Location target = block.getLocation().add(0.5, 0.5, 0.5);
+        // The centre first, which settles almost every case with one ray.
+        if (rayReaches(eye, block, 0.5, 0.5, 0.5)) {
+            return true;
+        }
+        // Then the middle of each face turned towards the player. A chest in a
+        // recess shows its front while its centre is behind the wall edge.
+        double ex = eye.getX() - block.getX();
+        double ey = eye.getY() - block.getY();
+        double ez = eye.getZ() - block.getZ();
+        if ((ex < 0 || ex > 1) && rayReaches(eye, block, ex < 0 ? 0.05 : 0.95, 0.5, 0.5)) {
+            return true;
+        }
+        if ((ey < 0 || ey > 1) && rayReaches(eye, block, 0.5, ey < 0 ? 0.05 : 0.95, 0.5)) {
+            return true;
+        }
+        return (ez < 0 || ez > 1) && rayReaches(eye, block, 0.5, 0.5, ez < 0 ? 0.05 : 0.95);
+    }
+
+    /**
+     * Whether a ray from the eye to a point inside the block gets there.
+     *
+     * <p>Stopping on a protected block right next to the target also counts.
+     * Looked at end-on, the ray to the far half of a double chest or a bed hits
+     * the near half first; treating that as blocked left players looking at
+     * half a chest.
+     */
+    private boolean rayReaches(Location eye, Block block, double ox, double oy, double oz) {
+        Location target = block.getLocation().add(ox, oy, oz);
         org.bukkit.util.Vector direction = target.toVector().subtract(eye.toVector());
         double distance = direction.length();
         if (distance < 0.1) {
             return true;
         }
-        var hit = player.getWorld().rayTraceBlocks(eye, direction.normalize(), distance,
+        var hit = eye.getWorld().rayTraceBlocks(eye, direction.normalize(), distance,
                 org.bukkit.FluidCollisionMode.NEVER, true);
-        return hit == null || hit.getHitBlock() == null
-                || hit.getHitBlock().getLocation().equals(block.getLocation());
+        if (hit == null || hit.getHitBlock() == null) {
+            return true;
+        }
+        Block hitBlock = hit.getHitBlock();
+        if (hitBlock.equals(block)) {
+            return true;
+        }
+        int apart = Math.abs(hitBlock.getX() - block.getX())
+                + Math.abs(hitBlock.getY() - block.getY())
+                + Math.abs(hitBlock.getZ() - block.getZ());
+        return apart == 1 && protectedTypes.contains(hitBlock.getType());
     }
 
     /** Sends a container's real block and block entity data to nearby players. */
@@ -392,5 +461,6 @@ public final class ShieldIndexer implements Listener {
     public void forget(Player player) {
         index.forgetPlayer(player.getUniqueId());
         lastCheck.remove(player.getUniqueId());
+        lastSweep.remove(player.getUniqueId());
     }
 }

@@ -1,5 +1,7 @@
 # OutOfSight
 
+<img src="assets/logo.png" alt="OutOfSight logo" width="96">
+
 A Paper plugin that stops base finding, the cheat capability Minecraft's own
 anti-xray does not cover.
 
@@ -28,11 +30,9 @@ engine-mode 2
   diamond ore  block=hidden(deepslate_copper_ore) block-entity=none
 ```
 
-The ore is hidden either way. The chest gives its position away either way. Mode 1
-at least replaces the block with stone; mode 2, the stronger mode for ores, does
-not even do that.
-
-Block ESP and chunk finders work in that gap.
+The ore is hidden in both modes and the chest gives its position away in both.
+Mode 1 at least replaces the block with stone. Mode 2, the stronger mode for ores,
+does not even do that. Block ESP and chunk finders work in that gap.
 
 | Target | engine-mode 1 | engine-mode 2 |
 |---|---|---|
@@ -59,8 +59,8 @@ changing only the block leaves the position readable in the raw list.
 
 The rule is default deny. A container goes out only once the main thread has
 decided this player may see it, which means being close enough and having an
-unobstructed line to it. A network thread cannot read the world, so it answers the
-one question it can answer alone: has this player been given this container yet?
+unobstructed line to it. A network thread cannot read the world, so all it checks
+is whether this player has been given this container yet.
 
 Two things decide delivery:
 
@@ -78,13 +78,40 @@ would be a poor rule, since a chest anyone can open has air above it.
 
 The ray only runs for containers not yet delivered, and a player who has not moved
 in a world that has not changed is skipped entirely. Walking into a base with fifty
-chests pays for fifty rays once, then nothing.
+chests costs rays while you move and none once you stand still.
 
 Events cannot catch every change, since commands, WorldEdit, pistons and flowing
 water produce no `BlockBreakEvent`. A slower sweep re-reads the block entities of
 nearby chunks, which both finds containers nothing reported and drops ones that no
 longer exist. A container left hidden by mistake means a player loses their items,
 which is what that sweep exists to prevent.
+
+### Storage vehicles
+
+Chest minecarts, hopper minecarts and chest boats are entities, not blocks, so
+the shield above never sees them. Storage ESP draws them anyway, and a line of
+hopper minecarts under a farm points at a base as plainly as a chest.
+
+They follow the same default-deny rule: an entity is sent to a player only once
+a ray from that player's eye reaches it. Distance plays no part, so anything in
+plain view stays visible as far as the client draws it. Paper's
+`hideEntity` keeps the tracker quiet, and because it is per plugin it does not
+fight other plugins that hide or show the same entity. It cannot stop the
+tracker's very first spawn packet, so a packet listener drops that one for any
+entity not yet shown. A vehicle someone is riding is never hidden, since that
+would show a player floating on nothing. Players themselves cannot be listed:
+hiding a player also removes them from the tab list.
+
+`shield.protected-entities` takes more types. `item_frame`, `glow_item_frame` and
+`armor_stand` are worth adding against collectible ESP; since only line of sight
+decides, map walls and shop displays in the open are unaffected.
+
+### Config advisor
+
+Paper's anti-xray handles X-ray and netherite finders, and it ships switched off. Its default `hidden-blocks` list also has no
+`ancient_debris`, `spawner`, `barrel` or `trapped_chest`. On startup, and on
+`/outofsight advise`, the plugin reads `config/paper-world-defaults.yml` and each
+world's `paper-world.yml` and reports what is left open. It never changes them.
 
 ### Decoys (optional, off by default)
 
@@ -116,7 +143,7 @@ leaks, per block type. It separates exposed leaks, which a player can see anyway
 from buried ones, which are the genuine problem. Both channels are inspected: block
 states and the block-entity list.
 
-Type comparison is essential: `engine-mode: 2` replaces each buried ore with a
+Comparing types matters because `engine-mode: 2` replaces each buried ore with a
 *random different* ore, so asking only "is there an ore here" reports a false 58%
 leak rate. This project made that exact mistake before fixing it.
 
@@ -136,6 +163,32 @@ Range is read from the player's `ENTITY_INTERACTION_RANGE` attribute rather than
 hardcoded. That showed up immediately in testing: creative allows 5.03, survival
 3.03. A hardcoded 3.0 would flag every creative hit.
 
+## What Krypton-style clients can still do
+
+Checked against the feature list of Krypton, a paid Fabric cheat client popular
+on SMP servers. Information cheats are only beaten by not sending the
+information; action cheats need a real anticheat.
+
+| Cheat feature | Status | Answered by |
+|---|---|---|
+| Storage ESP, block ESP, stash finder | Blocked | Shield |
+| Spawner ESP / notifier | Blocked | Shield (`spawner`), plus anti-xray `hidden-blocks` |
+| Chest and hopper minecarts, chest boats | Blocked | Storage vehicles |
+| Collectible ESP: banners | Blocked | Shield (`#banners`) |
+| Collectible ESP: item frames, armor stands | Opt-in | Add them to `protected-entities` |
+| X-ray, netherite finder | Paper anti-xray | `/outofsight advise` checks the settings |
+| Mob / entity ESP | Opt-in for mobs | `protected-entities`; players are never hidden |
+| SUS chunk finder, seed-based finders | Partly | Keep the seed private; `advise` checks feature seeds |
+| Hole, tunnel and stairs ESP, 1x1 holes | Not blockable | The client needs terrain shape to render and collide |
+| KillAura, aim assist, crystal and anchor aura | Not here | Use [Grim](https://grim.ac/) |
+| Auto totem | Not here | Not reliably detectable server-side |
+| Speed, fly, elytra auto fly, auto mine | Not here | Use Grim |
+
+Movement and combat checks are left to Grim on purpose. It simulates vanilla
+movement tick by tick, which is what it takes to flag these cheats without
+flagging honest players on bad connections. It also runs on PacketEvents, next to
+this plugin, without conflict.
+
 ## Requirements
 
 - Paper 1.21.11
@@ -151,6 +204,7 @@ All require `outofsight.admin` (op by default).
 | `/outofsight hidechest` | Place a buried chest + control ore, then relog to test |
 | `/outofsight shield` | Toggle the shield |
 | `/outofsight testme` | Shield yourself only, for testing |
+| `/outofsight advise` | Report what Paper's anti-xray and seed settings leave open |
 | `/outofsight reachdebug` | Log the measured distance of every hit |
 | `/outofsight reachsim <d>` | Show where the reach threshold sits |
 | `/outofsight stress <n>` | Build a dense field of buried chests for load testing |
@@ -160,6 +214,9 @@ All require `outofsight.admin` (op by default).
 
 Measured with bots that teleport constantly to force chunk loading, a far heavier
 load than normal play, at roughly 400 to 700 chunk packets per second.
+
+These runs predate the storage vehicle shield. Its sweep adds main-thread work
+that the table does not include yet.
 
 | Scenario | Packets | Modified | Network (µs/pkt) | Main thread | MSPT / TPS |
 |---|---|---|---|---|---|
@@ -181,6 +238,10 @@ every run, with no exceptions.
   Enabling decoys touches more packets and raises it. TPS was unaffected because
   the work is on network threads, but there is no measured figure for it.
 - Tested up to 40 bots on one world. A 100+ player server has not been measured.
+- Containers placed without an event (commands, WorldEdit, a dispenser placing a
+  shulker box) are found by the sweep, which only covers chunks near players.
+  Until a player comes within `sweep-radius-chunks`, players farther out can
+  receive them.
 - Chest-type registry ids are learned from live packets. If that fails, set
   `shield.decoy-block-entity-type` manually.
 - A container comes into view up to `deliver-interval-ticks` late, a quarter of a
@@ -191,9 +252,16 @@ every run, with no exceptions.
 
 ## Verification harness
 
-`harness/` holds headless clients that verify behaviour from the client's point of
-view. That is the only view that works here, because the server-side audit reads
-the raw buffer and never sees the shield's changes.
+CI runs `harness/e2e.mjs` on every push. It starts Paper 1.21.11 with
+PacketEvents, builds a known scene with console commands and joins with a
+headless client that decodes every chunk, block update and entity spawn it
+receives. It checks buried, far and plainly visible chests, an end-on double
+chest, the Nether, and buried and visible chest minecarts, then turns the
+shield off and confirms the same buried chest leaks.
+
+The scripts below are for manual runs against a local server. They check
+behaviour from the client's point of view, which is the only view that works here:
+the server-side audit reads the raw buffer and never sees the shield's changes.
 
 ```
 node relog.mjs <name> <ms> ["command"]   # connect, run a command, leave
@@ -210,7 +278,8 @@ node loadtest.mjs <bots> <secs>          # load generation
 cd plugin && gradle build
 ```
 
-Unit tests cover the reach math, weighted towards false-positive cases:
+Unit tests cover the reach math, weighted towards false-positive cases, plus the
+container index and decoy placement:
 
 ```
 cd plugin && gradle test

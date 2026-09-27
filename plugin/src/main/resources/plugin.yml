@@ -9,7 +9,7 @@ website: https://github.com/tunaseckin/outofsight
 commands:
   outofsight:
     description: OutOfSight administration
-    usage: /outofsight <xray|shield|testme|hidechest|reachdebug|reachsim|stress|perf>
+    usage: /outofsight <xray|shield|testme|advise|hidechest|reachdebug|reachsim|stress|perf>
     permission: outofsight.admin
     aliases: [oos]
 permissions:
