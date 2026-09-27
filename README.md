@@ -86,6 +86,34 @@ nearby chunks, which both finds containers nothing reported and drops ones that 
 longer exist. A container left hidden by mistake means a player loses their items,
 which is what that sweep exists to prevent.
 
+### Storage vehicles
+
+Chest minecarts, hopper minecarts and chest boats are entities, not blocks, so
+the shield above never sees them. Storage ESP draws them anyway, and a line of
+hopper minecarts under a farm points at a base as plainly as a chest.
+
+They follow the same default-deny rule: an entity is sent to a player only once
+a ray from that player's eye reaches it. Distance plays no part, so anything in
+plain view stays visible as far as the client draws it. Paper's
+`hideEntity` keeps the tracker quiet, and because it is per plugin it does not
+fight other plugins that hide or show the same entity. It cannot stop the
+tracker's very first spawn packet, so a packet listener drops that one for any
+entity not yet shown. A vehicle someone is riding is never hidden, since that
+would show a player floating on nothing. Players themselves cannot be listed:
+hiding a player also removes them from the tab list.
+
+`shield.protected-entities` takes more types. `item_frame`, `glow_item_frame` and
+`armor_stand` are worth adding against collectible ESP; since only line of sight
+decides, map walls and shop displays in the open are unaffected.
+
+### Config advisor
+
+X-ray and netherite finders are Paper anti-xray's job, not this plugin's, and
+anti-xray ships switched off. Its default `hidden-blocks` list also has no
+`ancient_debris`, `spawner`, `barrel` or `trapped_chest`. On startup, and on
+`/outofsight advise`, the plugin reads `config/paper-world-defaults.yml` and each
+world's `paper-world.yml` and reports what is left open. It never changes them.
+
 ### Decoys (optional, off by default)
 
 The server plants fake buried chests, so someone hunting bases digs sixty blocks
@@ -136,6 +164,32 @@ Range is read from the player's `ENTITY_INTERACTION_RANGE` attribute rather than
 hardcoded. That showed up immediately in testing: creative allows 5.03, survival
 3.03. A hardcoded 3.0 would flag every creative hit.
 
+## What Krypton-style clients can still do
+
+Checked against the feature list of Krypton, a paid Fabric cheat client popular
+on SMP servers. Information cheats are only beaten by not sending the
+information; action cheats need a real anticheat.
+
+| Cheat feature | Status | Answered by |
+|---|---|---|
+| Storage ESP, block ESP, stash finder | Blocked | Shield |
+| Spawner ESP / notifier | Blocked | Shield (`spawner`), plus anti-xray `hidden-blocks` |
+| Chest and hopper minecarts, chest boats | Blocked | Storage vehicles |
+| Collectible ESP: banners | Blocked | Shield (`#banners`) |
+| Collectible ESP: item frames, armor stands | Opt-in | Add them to `protected-entities` |
+| X-ray, netherite finder | Paper anti-xray | `/outofsight advise` checks the settings |
+| Mob / entity ESP | Opt-in for mobs | `protected-entities`; players are never hidden |
+| SUS chunk finder, seed-based finders | Partly | Keep the seed private; `advise` checks feature seeds |
+| Hole, tunnel and stairs ESP, 1x1 holes | Not blockable | The client needs terrain shape to render and collide |
+| KillAura, aim assist, crystal and anchor aura | Not here | Use [Grim](https://grim.ac/) |
+| Auto totem | Not here | Not reliably detectable server-side |
+| Speed, fly, elytra auto fly, auto mine | Not here | Use Grim |
+
+Movement and combat checks are left to Grim on purpose. It simulates vanilla
+movement tick by tick, which is the only way to flag them without flagging
+honest players on bad connections, and it runs on PacketEvents alongside this
+plugin without conflict.
+
 ## Requirements
 
 - Paper 1.21.11
@@ -151,6 +205,7 @@ All require `outofsight.admin` (op by default).
 | `/outofsight hidechest` | Place a buried chest + control ore, then relog to test |
 | `/outofsight shield` | Toggle the shield |
 | `/outofsight testme` | Shield yourself only, for testing |
+| `/outofsight advise` | Report what Paper's anti-xray and seed settings leave open |
 | `/outofsight reachdebug` | Log the measured distance of every hit |
 | `/outofsight reachsim <d>` | Show where the reach threshold sits |
 | `/outofsight stress <n>` | Build a dense field of buried chests for load testing |

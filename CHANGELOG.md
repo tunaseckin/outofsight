@@ -39,6 +39,26 @@ First public build. Not yet tested by anyone other than the author.
 - Ping-compensated, measured to the bounding box, with violation decay.
 - Range read from `ENTITY_INTERACTION_RANGE` rather than hardcoded.
 
+### Storage vehicles
+- Chest minecarts, hopper minecarts and chest boats are hidden from players with
+  no line of sight to them, using Paper's per-plugin `hideEntity` plus a packet
+  listener that drops the first spawn packet. Ridden vehicles and players are
+  never hidden. More types can be added in `shield.protected-entities`.
+
+### Config advisor
+- On startup and on `/outofsight advise`, reports when Paper anti-xray is off,
+  when `hidden-blocks` lacks `ancient_debris`, `spawner`, `barrel`,
+  `trapped_chest` and similar, and when feature seeds are not randomised.
+  Reads only; never changes Paper's config.
+
+### Shield
+- `protected-blocks` accepts block tags such as `#beds`. Copper chests, beds,
+  signs and banners are protected by default. An existing `config.yml` is not
+  rewritten, so add them by hand on a server that already has one.
+- Line of sight also tries the faces turned towards the player, and a ray that
+  stops on the other half of a double chest or bed counts as reaching it.
+  Before, looking at one end-on left the far half hidden.
+
 ### Fixes
 - The shield read the world floor once at startup, from the Overworld (-64). In
   the Nether and the End the floor is 0, so every edit there landed four sections

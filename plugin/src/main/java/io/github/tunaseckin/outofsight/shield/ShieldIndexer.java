@@ -371,16 +371,52 @@ public final class ShieldIndexer implements Listener {
      */
     private boolean hasLineOfSight(Player player, Block block) {
         Location eye = player.getEyeLocation();
-        Location target = block.getLocation().add(0.5, 0.5, 0.5);
+        // The centre first, which settles almost every case with one ray.
+        if (rayReaches(eye, block, 0.5, 0.5, 0.5)) {
+            return true;
+        }
+        // Then the middle of each face turned towards the player. A chest in a
+        // recess shows its front while its centre is behind the wall edge.
+        double ex = eye.getX() - block.getX();
+        double ey = eye.getY() - block.getY();
+        double ez = eye.getZ() - block.getZ();
+        if ((ex < 0 || ex > 1) && rayReaches(eye, block, ex < 0 ? 0.05 : 0.95, 0.5, 0.5)) {
+            return true;
+        }
+        if ((ey < 0 || ey > 1) && rayReaches(eye, block, 0.5, ey < 0 ? 0.05 : 0.95, 0.5)) {
+            return true;
+        }
+        return (ez < 0 || ez > 1) && rayReaches(eye, block, 0.5, 0.5, ez < 0 ? 0.05 : 0.95);
+    }
+
+    /**
+     * Whether a ray from the eye to a point inside the block gets there.
+     *
+     * <p>Stopping on a protected block right next to the target also counts.
+     * Looked at end-on, the ray to the far half of a double chest or a bed hits
+     * the near half first; treating that as blocked left players looking at
+     * half a chest.
+     */
+    private boolean rayReaches(Location eye, Block block, double ox, double oy, double oz) {
+        Location target = block.getLocation().add(ox, oy, oz);
         org.bukkit.util.Vector direction = target.toVector().subtract(eye.toVector());
         double distance = direction.length();
         if (distance < 0.1) {
             return true;
         }
-        var hit = player.getWorld().rayTraceBlocks(eye, direction.normalize(), distance,
+        var hit = eye.getWorld().rayTraceBlocks(eye, direction.normalize(), distance,
                 org.bukkit.FluidCollisionMode.NEVER, true);
-        return hit == null || hit.getHitBlock() == null
-                || hit.getHitBlock().getLocation().equals(block.getLocation());
+        if (hit == null || hit.getHitBlock() == null) {
+            return true;
+        }
+        Block hitBlock = hit.getHitBlock();
+        if (hitBlock.equals(block)) {
+            return true;
+        }
+        int apart = Math.abs(hitBlock.getX() - block.getX())
+                + Math.abs(hitBlock.getY() - block.getY())
+                + Math.abs(hitBlock.getZ() - block.getZ());
+        return apart == 1 && protectedTypes.contains(hitBlock.getType());
     }
 
     /** Sends a container's real block and block entity data to nearby players. */
