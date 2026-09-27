@@ -74,6 +74,14 @@ public final class ShieldIndexer implements Listener {
     /** Last position and world revision each player was evaluated against. */
     private final Map<UUID, long[]> lastCheck = new ConcurrentHashMap<>();
 
+    /**
+     * The same for delivery: eye position, world revision and index version.
+     *
+     * <p>When none of them changed, every container this player could be given
+     * has already been judged, so the rays would only repeat their answers.
+     */
+    private final Map<UUID, long[]> lastSweep = new ConcurrentHashMap<>();
+
     private final java.util.concurrent.atomic.AtomicLong sweeps =
             new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong sweepNanos =
@@ -147,6 +155,7 @@ public final class ShieldIndexer implements Listener {
     public void onChangedWorld(org.bukkit.event.player.PlayerChangedWorldEvent event) {
         index.clearDelivered(event.getPlayer().getUniqueId());
         lastCheck.remove(event.getPlayer().getUniqueId());
+        lastSweep.remove(event.getPlayer().getUniqueId());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -226,6 +235,9 @@ public final class ShieldIndexer implements Listener {
 
         boolean nowEnclosed = enclosed(block);
         boolean changed = index.setEnclosed(world, x, y, z, nowEnclosed);
+        if (changed) {
+            worldRevision.incrementAndGet(); // Standing players need a fresh look.
+        }
         if (changed && !nowEnclosed) {
             // A wall came down. Deliver it now instead of waiting for the sweep.
             deliver(block);
@@ -310,6 +322,14 @@ public final class ShieldIndexer implements Listener {
     private void doSweep() {
         for (Player player : plugin.getServer().getOnlinePlayers()) {
             index.setShielded(player.getUniqueId(), player.hasPermission(SHIELDED_PERMISSION));
+            Location eye = player.getEyeLocation();
+            long[] state = {
+                    HiddenIndex.posKey(eye.getBlockX(), eye.getBlockY(), eye.getBlockZ()),
+                    worldRevision.get(), index.version(),
+                    player.getWorld().getUID().getMostSignificantBits()};
+            if (java.util.Arrays.equals(state, lastSweep.put(player.getUniqueId(), state))) {
+                continue; // Nothing moved and nothing changed.
+            }
             Location loc = player.getLocation();
             World world = player.getWorld();
             UUID worldId = world.getUID();
@@ -441,5 +461,6 @@ public final class ShieldIndexer implements Listener {
     public void forget(Player player) {
         index.forgetPlayer(player.getUniqueId());
         lastCheck.remove(player.getUniqueId());
+        lastSweep.remove(player.getUniqueId());
     }
 }

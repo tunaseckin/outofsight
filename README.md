@@ -1,5 +1,7 @@
 # OutOfSight
 
+<img src="assets/logo.png" alt="OutOfSight logo" width="96">
+
 A Paper plugin that stops base finding, the cheat capability Minecraft's own
 anti-xray does not cover.
 
@@ -28,11 +30,9 @@ engine-mode 2
   diamond ore  block=hidden(deepslate_copper_ore) block-entity=none
 ```
 
-The ore is hidden either way. The chest gives its position away either way. Mode 1
-at least replaces the block with stone; mode 2, the stronger mode for ores, does
-not even do that.
-
-Block ESP and chunk finders work in that gap.
+The ore is hidden in both modes and the chest gives its position away in both.
+Mode 1 at least replaces the block with stone. Mode 2, the stronger mode for ores,
+does not even do that. Block ESP and chunk finders work in that gap.
 
 | Target | engine-mode 1 | engine-mode 2 |
 |---|---|---|
@@ -59,8 +59,8 @@ changing only the block leaves the position readable in the raw list.
 
 The rule is default deny. A container goes out only once the main thread has
 decided this player may see it, which means being close enough and having an
-unobstructed line to it. A network thread cannot read the world, so it answers the
-one question it can answer alone: has this player been given this container yet?
+unobstructed line to it. A network thread cannot read the world, so all it checks
+is whether this player has been given this container yet.
 
 Two things decide delivery:
 
@@ -78,7 +78,7 @@ would be a poor rule, since a chest anyone can open has air above it.
 
 The ray only runs for containers not yet delivered, and a player who has not moved
 in a world that has not changed is skipped entirely. Walking into a base with fifty
-chests pays for fifty rays once, then nothing.
+chests costs rays while you move and none once you stand still.
 
 Events cannot catch every change, since commands, WorldEdit, pistons and flowing
 water produce no `BlockBreakEvent`. A slower sweep re-reads the block entities of
@@ -108,8 +108,7 @@ decides, map walls and shop displays in the open are unaffected.
 
 ### Config advisor
 
-X-ray and netherite finders are Paper anti-xray's job, not this plugin's, and
-anti-xray ships switched off. Its default `hidden-blocks` list also has no
+Paper's anti-xray handles X-ray and netherite finders, and it ships switched off. Its default `hidden-blocks` list also has no
 `ancient_debris`, `spawner`, `barrel` or `trapped_chest`. On startup, and on
 `/outofsight advise`, the plugin reads `config/paper-world-defaults.yml` and each
 world's `paper-world.yml` and reports what is left open. It never changes them.
@@ -144,7 +143,7 @@ leaks, per block type. It separates exposed leaks, which a player can see anyway
 from buried ones, which are the genuine problem. Both channels are inspected: block
 states and the block-entity list.
 
-Type comparison is essential: `engine-mode: 2` replaces each buried ore with a
+Comparing types matters because `engine-mode: 2` replaces each buried ore with a
 *random different* ore, so asking only "is there an ore here" reports a false 58%
 leak rate. This project made that exact mistake before fixing it.
 
@@ -186,9 +185,9 @@ information; action cheats need a real anticheat.
 | Speed, fly, elytra auto fly, auto mine | Not here | Use Grim |
 
 Movement and combat checks are left to Grim on purpose. It simulates vanilla
-movement tick by tick, which is the only way to flag them without flagging
-honest players on bad connections, and it runs on PacketEvents alongside this
-plugin without conflict.
+movement tick by tick, which is what it takes to flag these cheats without
+flagging honest players on bad connections. It also runs on PacketEvents, next to
+this plugin, without conflict.
 
 ## Requirements
 
@@ -216,6 +215,9 @@ All require `outofsight.admin` (op by default).
 Measured with bots that teleport constantly to force chunk loading, a far heavier
 load than normal play, at roughly 400 to 700 chunk packets per second.
 
+These runs predate the storage vehicle shield. Its sweep adds main-thread work
+that the table does not include yet.
+
 | Scenario | Packets | Modified | Network (µs/pkt) | Main thread | MSPT / TPS |
 |---|---|---|---|---|---|
 | 20 bots, empty world | 37 992 | 94 | 11.9 | 1.24 ms | 19.90 / 20.00 |
@@ -236,6 +238,10 @@ every run, with no exceptions.
   Enabling decoys touches more packets and raises it. TPS was unaffected because
   the work is on network threads, but there is no measured figure for it.
 - Tested up to 40 bots on one world. A 100+ player server has not been measured.
+- Containers placed without an event (commands, WorldEdit, a dispenser placing a
+  shulker box) are found by the sweep, which only covers chunks near players.
+  Until a player comes within `sweep-radius-chunks`, players farther out can
+  receive them.
 - Chest-type registry ids are learned from live packets. If that fails, set
   `shield.decoy-block-entity-type` manually.
 - A container comes into view up to `deliver-interval-ticks` late, a quarter of a
@@ -246,9 +252,16 @@ every run, with no exceptions.
 
 ## Verification harness
 
-`harness/` holds headless clients that verify behaviour from the client's point of
-view. That is the only view that works here, because the server-side audit reads
-the raw buffer and never sees the shield's changes.
+CI runs `harness/e2e.mjs` on every push. It starts Paper 1.21.11 with
+PacketEvents, builds a known scene with console commands and joins with a
+headless client that decodes every chunk, block update and entity spawn it
+receives. It checks buried, far and plainly visible chests, an end-on double
+chest, the Nether, and buried and visible chest minecarts, then turns the
+shield off and confirms the same buried chest leaks.
+
+The scripts below are for manual runs against a local server. They check
+behaviour from the client's point of view, which is the only view that works here:
+the server-side audit reads the raw buffer and never sees the shield's changes.
 
 ```
 node relog.mjs <name> <ms> ["command"]   # connect, run a command, leave
@@ -265,7 +278,8 @@ node loadtest.mjs <bots> <secs>          # load generation
 cd plugin && gradle build
 ```
 
-Unit tests cover the reach math, weighted towards false-positive cases:
+Unit tests cover the reach math, weighted towards false-positive cases, plus the
+container index and decoy placement:
 
 ```
 cd plugin && gradle test

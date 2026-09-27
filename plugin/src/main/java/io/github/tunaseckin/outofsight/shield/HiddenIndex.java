@@ -47,6 +47,14 @@ public final class HiddenIndex {
      */
     private final Map<UUID, Set<Long>> delivered = new ConcurrentHashMap<>();
 
+    /** Bumped whenever a container is added or dropped, so callers can skip unchanged state. */
+    private final java.util.concurrent.atomic.AtomicLong version =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    public long version() {
+        return version.get();
+    }
+
     public static long chunkKey(int chunkX, int chunkZ) {
         return ((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL);
     }
@@ -91,13 +99,15 @@ public final class HiddenIndex {
     // --- container membership ---------------------------------------------
 
     public void addContainer(UUID world, int x, int y, int z) {
-        chunkSetOrCreate(containers, world, x >> 4, z >> 4).add(posKey(x, y, z));
+        if (chunkSetOrCreate(containers, world, x >> 4, z >> 4).add(posKey(x, y, z))) {
+            version.incrementAndGet();
+        }
     }
 
     public void removeContainer(UUID world, int x, int y, int z) {
         Set<Long> set = chunkSet(containers, world, x >> 4, z >> 4);
-        if (set != null) {
-            set.remove(posKey(x, y, z));
+        if (set != null && set.remove(posKey(x, y, z))) {
+            version.incrementAndGet();
         }
         setEnclosed(world, x, y, z, false);
     }
@@ -120,8 +130,8 @@ public final class HiddenIndex {
     public void clearChunk(UUID world, int chunkX, int chunkZ) {
         long key = chunkKey(chunkX, chunkZ);
         Map<Long, Set<Long>> worldContainers = containers.get(world);
-        if (worldContainers != null) {
-            worldContainers.remove(key);
+        if (worldContainers != null && worldContainers.remove(key) != null) {
+            version.incrementAndGet();
         }
         Map<Long, Set<Long>> worldEnclosed = enclosed.get(world);
         if (worldEnclosed != null) {
