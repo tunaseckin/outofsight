@@ -88,6 +88,36 @@ entity'lerini yeniden okuyor, bu da hem hiçbir yerde bildirilmemiş kapları bu
 hem artık var olmayanları düşürüyor. Yanlışlıkla gizli kalan bir kap, oyuncunun
 eşyasını kaybetmesi demek; tarama bunun için var.
 
+### Depolu araçlar
+
+Sandıklı minecart, hopper'lı minecart ve sandıklı tekneler blok değil varlık,
+yukarıdaki kalkan onları hiç görmüyor. Storage ESP onları yine de çiziyor ve bir
+farmın altındaki hopper minecart sırası bir base'i sandık kadar açık gösteriyor.
+
+Aynı varsayılan-ret kuralına tabiler: bir varlık oyuncuya ancak oyuncunun gözünden
+çıkan ışın ona ulaştığında gönderiliyor. Mesafenin rolü yok, açıkta duran her şey
+istemcinin çizdiği mesafeye kadar görünür kalıyor. Paper'ın `hideEntity`'si
+tracker'ı susturuyor ve eklenti başına çalıştığı için aynı varlığı gizleyip
+gösteren başka eklentilerle çakışmıyor. Tracker'ın en ilk spawn paketini
+durduramadığı için henüz gösterilmemiş varlıklarda o paketi bir paket dinleyicisi
+düşürüyor. Birinin bindiği araç hiç gizlenmiyor, yoksa oyuncu havada süzülüyor
+görünürdü. Oyuncular listeye eklenemiyor: bir oyuncuyu gizlemek onu tab
+listesinden de siliyor.
+
+`shield.protected-entities` başka türler de alıyor. Collectible ESP'ye karşı
+`item_frame`, `glow_item_frame` ve `armor_stand` eklemeye değer; karar yalnızca
+görüş hattına bağlı olduğu için açıktaki harita duvarları ve dükkan vitrinleri
+etkilenmiyor.
+
+### Ayar danışmanı
+
+X-ray ve netherite finder'a karşı koruma bu eklentinin değil Paper anti-xray'inin
+işi ve anti-xray kapalı geliyor. Varsayılan `hidden-blocks` listesinde
+`ancient_debris`, `spawner`, `barrel` ve `trapped_chest` de yok. Açılışta ve
+`/outofsight advise` ile eklenti `config/paper-world-defaults.yml` dosyasını ve her
+dünyanın `paper-world.yml` dosyasını okuyup açık kalanları raporluyor. Hiçbir
+ayarı değiştirmiyor.
+
 ### Tuzaklar (opsiyonel, varsayılan kapalı)
 
 Sunucu sahte gömülü sandıklar yerleştiriyor, böylece üs arayan biri altmış blok
@@ -139,6 +169,32 @@ Menzil sabit yazılmak yerine oyuncunun `ENTITY_INTERACTION_RANGE` niteliğinden
 okunuyor. Bu testte hemen kendini gösterdi: creative 5.03'e izin veriyor, survival
 3.03'e. Sabit 3.0 yazılsaydı her creative vuruşu işaretlenirdi.
 
+## Krypton tarzı istemcilerin hâlâ yapabildikleri
+
+SMP sunucularında yaygın, ücretli bir Fabric hile istemcisi olan Krypton'un özellik
+listesine göre kontrol edildi. Bilgi hilelerini yenmenin tek yolu bilgiyi
+göndermemek; eylem hileleri için gerçek bir anticheat gerekiyor.
+
+| Hile özelliği | Durum | Karşılayan |
+|---|---|---|
+| Storage ESP, block ESP, stash finder | Engelli | Kalkan |
+| Spawner ESP / bildirici | Engelli | Kalkan (`spawner`), ayrıca anti-xray `hidden-blocks` |
+| Sandıklı/hopper'lı minecart, sandıklı tekne | Engelli | Depolu araçlar |
+| Collectible ESP: bannerlar | Engelli | Kalkan (`#banners`) |
+| Collectible ESP: item frame, zırh askılığı | İsteğe bağlı | `protected-entities`'e ekle |
+| X-ray, netherite finder | Paper anti-xray | `/outofsight advise` ayarları kontrol ediyor |
+| Mob / varlık ESP | Moblar için isteğe bağlı | `protected-entities`; oyuncular asla gizlenmez |
+| SUS chunk finder, seed tabanlı bulucular | Kısmen | Seed'i gizli tut; `advise` feature seed'leri kontrol ediyor |
+| Hole, tunnel, stairs ESP, 1x1 delikler | Engellenemez | İstemci arazinin şeklini çizmek ve çarpışma için bilmek zorunda |
+| KillAura, aim assist, crystal ve anchor aura | Burada yok | [Grim](https://grim.ac/) kullan |
+| Auto totem | Burada yok | Sunucu tarafında güvenilir şekilde tespit edilemiyor |
+| Speed, fly, elytra auto fly, auto mine | Burada yok | Grim kullan |
+
+Hareket ve dövüş kontrolleri bilerek Grim'e bırakıldı. Grim vanilla hareketi tick
+tick simüle ediyor; kötü bağlantılı dürüst oyuncuları işaretlemeden bunları
+yakalamanın tek yolu bu. PacketEvents üzerinde çalıştığı için bu eklentiyle
+çakışmadan yan yana çalışıyor.
+
 ## Gereksinimler
 
 - Paper 1.21.11
@@ -154,6 +210,7 @@ Hepsi `outofsight.admin` gerektiriyor (varsayılan olarak op). Kısayol: `/oos`.
 | `/outofsight hidechest` | Gömülü sandık + kontrol cevheri koyar, sonra çık-gir |
 | `/outofsight shield` | Kalkanı açar/kapatır |
 | `/outofsight testme` | Kalkanı sadece kendine uygular, test için |
+| `/outofsight advise` | Paper'ın anti-xray ve seed ayarlarının açık bıraktıklarını raporlar |
 | `/outofsight reachdebug` | Her vuruşun ölçülen mesafesini yazar |
 | `/outofsight reachsim <d>` | Reach eşiğinin nerede olduğunu gösterir |
 | `/outofsight stress <n>` | Yük testi için yoğun bir gömülü sandık alanı kurar |
