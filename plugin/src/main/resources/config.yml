@@ -33,12 +33,20 @@ shield:
 
   # Block types to hide. A base is not only chests: a furnace, a hopper or a
   # beacon says "someone lives here" just as plainly.
+  # Entries starting with # are block tags and cover every variant, including
+  # ones a future update adds. Only blocks with a block entity can be hidden.
+  # Also worth adding if bases on your server use them: dispenser, dropper,
+  # crafter, lectern, jukebox, #wooden_shelves. They render as ordinary
+  # blocks, so beyond hide-beyond-blocks they vanish from view, which is why
+  # they are not on by default.
   protected-blocks:
     - chest
     - trapped_chest
+    - "#copper_chests"
     - barrel
     - ender_chest
     - spawner
+    # Covers every colour of shulker box, not only the undyed one.
     - shulker_box
     - furnace
     - blast_furnace
@@ -47,6 +55,34 @@ shield:
     - brewing_stand
     - beacon
     - enchanting_table
+    # Drawn by the client only up close anyway, so hiding them past
+    # hide-beyond-blocks is hardly visible. A bed or a sign underground is as
+    # plain a sign of a base as a chest.
+    - "#beds"
+    - "#all_signs"
+    - "#banners"
+
+  # Entities to hide while a player has no line of sight to them. Storage ESP
+  # finds chest and hopper minecarts and chest boats just like chests.
+  # Distance plays no part here: anything in plain view stays visible as far
+  # as the client draws it, so nothing changes for a player who can see it.
+  # chest_boat covers every wood. Players cannot be listed.
+  # Also worth adding against "collectible ESP": item_frame, glow_item_frame,
+  # armor_stand. They are hidden only when no line of sight reaches them, so
+  # map walls and shop displays in the open stay as they are.
+  protected-entities:
+    - chest_minecart
+    - hopper_minecart
+    - chest_boat
+
+  # How far around a player protected entities are checked. Match it to the
+  # misc entity-tracking-range in spigot.yml: anything tracked beyond it stays
+  # hidden even in plain view.
+  entity-check-radius: 96.0
+
+  # Most line-of-sight rays per player per sweep. A player near a large stash
+  # of hidden minecarts gets them checked a few at a time instead of all at once.
+  entity-rays-per-sweep: 64
 
   # Fake buried chests planted per chunk. 0 disables them.
   # Hiding says "you will not find it", decoys say "what you found is a lie".
