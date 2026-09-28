@@ -191,31 +191,91 @@ public final class HiddenIndex {
 
     public void forgetPlayer(UUID player) {
         delivered.remove(player);
-        shielded.remove(player);
+        covered.remove(player);
     }
 
-    // --- test mode --------------------------------------------------------
+    // --- quick looks -----------------------------------------------------
+
+    /** A container just withheld from a chunk packet that this player might see. */
+    public record Look(UUID player, UUID world, long pos) {
+    }
 
     /**
-     * Players the shield currently applies to while test mode is on.
+     * Containers the network thread just withheld, for the main thread to check.
+     *
+     * <p>After a join or a teleport every chest arrives hidden and would wait for
+     * the next sweep, a quarter of a second by default. Queuing them lets the main
+     * thread check them on the very next tick instead.
+     */
+    private final java.util.Queue<Look> looks = new java.util.concurrent.ConcurrentLinkedQueue<>();
+    private final java.util.concurrent.atomic.AtomicInteger lookCount =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /** Beyond this the queue drops requests; the regular sweep still covers them. */
+    private static final int MAX_LOOKS = 4096;
+
+    public void requestLook(UUID player, UUID world, long pos) {
+        if (lookCount.incrementAndGet() > MAX_LOOKS) {
+            lookCount.decrementAndGet();
+            return;
+        }
+        looks.add(new Look(player, world, pos));
+    }
+
+    /** @return the next queued look, or null when there is none */
+    public Look pollLook() {
+        Look look = looks.poll();
+        if (look != null) {
+            lookCount.decrementAndGet();
+        }
+        return look;
+    }
+
+    // --- who and where the shield covers ------------------------------------
+
+    /**
+     * Whether the shield applies to each player, decided from permissions.
      *
      * <p>Permissions can only be read on the main thread, so the answer is cached
-     * here for the network thread. Without test mode an admin has to switch the
-     * shield on for everyone at once to find out whether it works, which is not
-     * something anyone should do to a server with players on it.
+     * here for the network thread. Two things feed it: {@code outofsight.bypass},
+     * which lets staff see everything, and test mode, which limits the shield to
+     * holders of {@code outofsight.shielded}.
      */
-    private final Set<UUID> shielded = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, Boolean> covered = new ConcurrentHashMap<>();
+
+    /**
+     * The answer for a player not decided yet. Covered unless test mode is on:
+     * a new player should never be the gap in the shield, and a tester should
+     * never be surprised by it.
+     */
+    private volatile boolean coveredByDefault = true;
+
+    /** Worlds the shield leaves alone, by lower-case name. */
+    private volatile Set<String> disabledWorlds = Set.of();
+
+    public void setCoveredByDefault(boolean value) {
+        coveredByDefault = value;
+    }
 
     public void setShielded(UUID player, boolean value) {
-        if (value) {
-            shielded.add(player);
-        } else {
-            shielded.remove(player);
-        }
+        covered.put(player, value);
     }
 
     public boolean isShielded(UUID player) {
-        return shielded.contains(player);
+        Boolean value = covered.get(player);
+        return value != null ? value : coveredByDefault;
+    }
+
+    public void setDisabledWorlds(Set<String> names) {
+        Set<String> lower = new java.util.HashSet<>();
+        for (String name : names) {
+            lower.add(name.toLowerCase(java.util.Locale.ROOT));
+        }
+        disabledWorlds = Set.copyOf(lower);
+    }
+
+    public boolean isWorldShielded(String worldName) {
+        return !disabledWorlds.contains(worldName.toLowerCase(java.util.Locale.ROOT));
     }
 
     public int size() {

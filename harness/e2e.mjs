@@ -59,6 +59,9 @@ function connect() {
     chunks: new Map(),
     blockEntities: new Set(),
     tileUpdates: [],
+    chunkTimes: new Map(),
+    tileTimes: new Map(),
+    firstEntities: new Map(),
     spawns: [],
     kicked: null,
     ready: null,
@@ -85,6 +88,9 @@ function connect() {
       return;
     }
     view.chunks.set(chunkKey(packet.x, packet.z), chunk);
+    if (!view.chunkTimes.has(chunkKey(packet.x, packet.z))) {
+      view.chunkTimes.set(chunkKey(packet.x, packet.z), Date.now());
+    }
     // A resent chunk replaces what the client knew about its block entities.
     for (const key of [...view.blockEntities]) {
       const [x, , z] = key.split(',').map(Number);
@@ -95,6 +101,12 @@ function connect() {
       const lz = e.z ?? (e.packedXZ !== undefined ? e.packedXZ & 15 : null);
       if (lx === null || lz === null) continue;
       view.blockEntities.add(posKey(packet.x * 16 + lx, e.y, packet.z * 16 + lz));
+    }
+    // What the first packet for this chunk carried, before any correction.
+    if (!view.firstEntities.has(chunkKey(packet.x, packet.z))) {
+      view.firstEntities.set(chunkKey(packet.x, packet.z), (packet.blockEntities ?? [])
+          .map((e) => [packet.x * 16 + (e.x ?? ((e.packedXZ >> 4) & 15)), e.y,
+            packet.z * 16 + (e.z ?? (e.packedXZ & 15))]));
     }
   };
   client.on('map_chunk', onChunk);
@@ -109,6 +121,7 @@ function connect() {
     const { x, y, z } = p.location;
     view.blockEntities.add(posKey(x, y, z));
     view.tileUpdates.push(posKey(x, y, z));
+    if (!view.tileTimes.has(posKey(x, y, z))) view.tileTimes.set(posKey(x, y, z), Date.now());
   });
   client.on('spawn_entity', (p) => {
     const type = registry.entities[p.type]?.name ?? `#${p.type}`;
@@ -128,6 +141,12 @@ function connect() {
     return registry.blocksByStateId[id]?.name ?? `#${id}`;
   };
   view.hasBlockEntity = (x, y, z) => view.blockEntities.has(posKey(x, y, z));
+  /** Milliseconds from a chunk's arrival to the first block entity update at a position. */
+  view.deliveryDelay = (x, y, z) => {
+    const chunkAt = view.chunkTimes.get(chunkKey(x >> 4, z >> 4));
+    const tileAt = view.tileTimes.get(posKey(x, y, z));
+    return chunkAt && tileAt ? tileAt - chunkAt : null;
+  };
   view.spawnedNear = (type, x, y, z) => view.spawns.some((s) => s.type === type
       && Math.abs(s.x - x) < 1.5 && Math.abs(s.y - y) < 1.5 && Math.abs(s.z - z) < 1.5);
   view.chat = (command) => client.write('chat_command', { command });
@@ -166,6 +185,9 @@ const DOUBLE_FAR = [0, -60, 9];      // the far half hits the near half first.
 const CART_BURIED = [10.5, -62, 10.5];
 const CART_OPEN = [3.5, -60, -3.5];
 const NETHER_BURIED = [0, 62, 0];    // Nether floor is y=0, not -64.
+// A solid stone column filling chunk 2,-2 between the heights decoys use, so
+// the server plants decoys there. Superflat has no buried stone otherwise.
+const DECOY_CHUNK = [2, -2];
 
 async function main() {
   if (!(await waitForLog(/Done \(/, 600000))) {
@@ -187,6 +209,7 @@ async function main() {
   console_(`${inNether} fill -5 58 -5 5 72 5 minecraft:stone`);
   console_(`${inNether} fill -4 67 -4 4 71 4 minecraft:air`);
   console_(`${inNether} setblock ${NETHER_BURIED.join(' ')} minecraft:chest`);
+  console_('fill 32 -57 -32 47 60 -17 minecraft:stone');
   await sleep(3000);
 
   // Priming visit. Blocks placed by commands fire no event, so the plugin
@@ -218,6 +241,26 @@ async function main() {
       !view.spawnedNear('chest_minecart', ...CART_BURIED), JSON.stringify(view.spawns));
   check('chest minecart in plain view: sent',
       view.spawnedNear('chest_minecart', ...CART_OPEN), JSON.stringify(view.spawns));
+  const delay = view.deliveryDelay(...OPEN_NEAR);
+  check('chest in plain view arrives within a second of its chunk', delay !== null && delay < 1000,
+      `${delay} ms`);
+  console.log(`[e2e] delivery delay for the chest in plain view: ${delay} ms`);
+
+  // --- honeypot: dig where a decoy was shown, as a cheat with saved coordinates would ---
+  const decoySpots = view.firstEntities.get(DECOY_CHUNK.join(',')) ?? [];
+  check('decoys planted in the stone column', decoySpots.length > 0, JSON.stringify(decoySpots));
+  if (decoySpots.length > 0) {
+    const [dx, dy, dz] = decoySpots[0];
+    console_(`gamemode creative ${BOT}`);
+    console_(`tp ${BOT} ${dx + 0.5} ${dy + 1} ${dz + 0.5}`);
+    await sleep(2000);
+    view.client.write('block_dig', { status: 0, location: { x: dx, y: dy, z: dz }, face: 1, sequence: 1 });
+    await sleep(2000);
+    check('honeypot: digging into a decoy spot alerts staff', /dug into a decoy chest spot/.test(log));
+    console_(`gamemode survival ${BOT}`);
+    console_(`tp ${BOT} 0.5 -60 0.5 0 0`);
+    await sleep(1500);
+  }
 
   // --- shield on, nether ---
   view.dims = NETHER;
@@ -249,6 +292,24 @@ async function main() {
   check('control: with the shield off the buried minecart is sent',
       view.spawnedNear('chest_minecart', ...CART_BURIED), JSON.stringify(view.spawns));
   check('client never kicked', view.kicked === null, view.kicked ?? '');
+
+  // --- shield back on, but this player has the bypass permission ---
+  view.chat('oos shield');
+  await sleep(500);
+  view.chat('oos bypass');
+  await sleep(1000);
+  await view.leave();
+
+  view = connect();
+  await view.ready;
+  await sleep(4000);
+  check('bypass: the buried chest is sent to staff',
+      view.stateAt(...BURIED) === 'chest' && view.hasBlockEntity(...BURIED),
+      `block=${view.stateAt(...BURIED)}, blockEntity=${view.hasBlockEntity(...BURIED)}`);
+  check('bypass: the buried minecart is sent to staff',
+      view.spawnedNear('chest_minecart', ...CART_BURIED), JSON.stringify(view.spawns));
+  view.chat('oos bypass');
+  await sleep(500);
   await view.leave();
 
   // --- server log ---

@@ -61,7 +61,11 @@ spawn-protection=0
 enable-command-block=false
 PROPS
 
-# The plugin's own default config with the shield switched on.
-sed '0,/^  enabled: false/s//  enabled: true/' plugin/src/main/resources/config.yml \
-  > "$DIR/plugins/OutOfSight/config.yml"
-grep -n "^  enabled:" "$DIR/plugins/OutOfSight/config.yml"
+# The plugin's own default config with the shield switched on, and decoys in
+# every chunk with an alert on the first honeypot hit, so both can be checked.
+sed -e '0,/^  enabled: false/s//  enabled: true/' \
+    -e 's/^  decoys-per-chunk: 0/  decoys-per-chunk: 1/' \
+    -e 's/^  decoy-chunk-interval: 4/  decoy-chunk-interval: 1/' \
+    -e 's/^    threshold: 2/    threshold: 1/' \
+    plugin/src/main/resources/config.yml > "$DIR/plugins/OutOfSight/config.yml"
+grep -nE "^  enabled:|decoys-per-chunk|decoy-chunk-interval|    threshold" "$DIR/plugins/OutOfSight/config.yml"

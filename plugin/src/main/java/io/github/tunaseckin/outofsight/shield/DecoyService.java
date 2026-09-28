@@ -107,4 +107,72 @@ public final class DecoyService {
     public int perChunk() {
         return perChunk;
     }
+
+    /** Whether a block counts as solid, at chunk-local x and z. */
+    @FunctionalInterface
+    public interface Solid {
+        boolean at(int lx, int y, int lz);
+    }
+
+    private static final int[][] SELF_AND_NEIGHBOURS = {
+            {0, 0, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+
+    /**
+     * The decoys to plant in a chunk: the first candidates buried in solid blocks.
+     *
+     * <p>{@code solid} decides what counts as buried, so the same choice can be
+     * made from a chunk packet or from the world.
+     */
+    public List<int[]> plant(int chunkX, int chunkZ, int minY, Solid solid) {
+        List<int[]> chosen = new ArrayList<>(perChunk);
+        for (int[] candidate : candidates(chunkX, chunkZ, minY, 60)) {
+            if (chosen.size() >= perChunk) {
+                break;
+            }
+            boolean buried = true;
+            for (int[] o : SELF_AND_NEIGHBOURS) {
+                if (!solid.at(candidate[0] + o[0], candidate[1] + o[1], candidate[2] + o[2])) {
+                    buried = false;
+                    break;
+                }
+            }
+            if (buried) {
+                chosen.add(candidate);
+            }
+        }
+        return chosen;
+    }
+
+    // --- honeypot -----------------------------------------------------------
+
+    /**
+     * Where decoys have actually been sent, per world.
+     *
+     * <p>Recorded when the packet goes out, because that is the only moment the
+     * answer is certain. Recomputing it later from the world fails exactly when
+     * it matters: someone who tunnels up to a decoy has already dug away the
+     * stone that made it a valid spot.
+     */
+    private final java.util.Map<java.util.UUID, java.util.Set<Long>> planted =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicInteger plantedCount =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /** A cap on remembered positions; about 80 bytes each. */
+    static final int MAX_PLANTED = 500_000;
+
+    public void recordPlanted(java.util.UUID world, long pos) {
+        if (planted.computeIfAbsent(world, k -> java.util.concurrent.ConcurrentHashMap.newKeySet())
+                .add(pos) && plantedCount.incrementAndGet() > MAX_PLANTED) {
+            // Starting over loses nothing that matters: every position is planted
+            // again, identically, the next time its chunk is sent.
+            planted.clear();
+            plantedCount.set(0);
+        }
+    }
+
+    public boolean wasPlanted(java.util.UUID world, long pos) {
+        java.util.Set<Long> set = planted.get(world);
+        return set != null && set.contains(pos);
+    }
 }

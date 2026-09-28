@@ -149,7 +149,8 @@ public final class EntityShield extends PacketListenerAbstract implements Listen
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         boolean applies = blockShield.isEnabled()
-                && (!testMode || player.hasPermission(ShieldIndexer.SHIELDED_PERMISSION));
+                && index.isWorldShielded(player.getWorld().getName())
+                && ShieldIndexer.covers(player, testMode);
         if (applies) {
             startManaging(player);
         }
@@ -223,7 +224,8 @@ public final class EntityShield extends PacketListenerAbstract implements Listen
         for (Player player : plugin.getServer().getOnlinePlayers()) {
             UUID id = player.getUniqueId();
             boolean applies = blockShield.isEnabled()
-                    && (!testMode || index.isShielded(id));
+                    && index.isWorldShielded(player.getWorld().getName())
+                    && ShieldIndexer.covers(player, testMode);
             if (!applies) {
                 if (managed.contains(id)) {
                     stopManaging(player);

@@ -4,6 +4,7 @@ import com.github.retrooper.packetevents.PacketEvents;
 import io.github.tunaseckin.outofsight.reach.ReachCheck;
 import io.github.tunaseckin.outofsight.shield.BlockEntityShield;
 import io.github.tunaseckin.outofsight.shield.DecoyCorrector;
+import io.github.tunaseckin.outofsight.shield.DecoyHoneypot;
 import io.github.tunaseckin.outofsight.shield.DecoyService;
 import io.github.tunaseckin.outofsight.shield.EntityShield;
 import io.github.tunaseckin.outofsight.shield.HiddenIndex;
@@ -50,26 +51,35 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
         reachCheck = new ReachCheck(this);
 
         saveDefaultConfig();
+        loadBypassers();
         hiddenIndex = new HiddenIndex();
+        boolean testMode = getConfig().getBoolean("shield.test-mode", false);
+        hiddenIndex.setCoveredByDefault(!testMode);
+        hiddenIndex.setDisabledWorlds(new java.util.HashSet<>(
+                getConfig().getStringList("shield.disabled-worlds")));
         DecoyService decoys = new DecoyService(
                 getConfig().getInt("shield.decoys-per-chunk", 0),
                 getServer().getWorlds().get(0).getSeed(),
                 getConfig().getInt("shield.decoy-block-entity-type", -1),
                 getConfig().getInt("shield.decoy-chunk-interval", 4));
-        shield = new BlockEntityShield(this, hiddenIndex, decoys,
-                getConfig().getBoolean("shield.test-mode", false));
+        shield = new BlockEntityShield(this, hiddenIndex, decoys);
 
         corrector = new DecoyCorrector(this, decoys,
                 getConfig().getInt("shield.decoy-correction-radius-chunks", 3));
         getServer().getScheduler().runTaskTimer(this, corrector::run, 20L, 20L);
         if (decoys.enabled()) {
             getLogger().info("decoys on: " + decoys.perChunk() + " per chunk");
+            if (getConfig().getBoolean("shield.honeypot.enabled", true)) {
+                getServer().getPluginManager().registerEvents(new DecoyHoneypot(this, decoys,
+                        getConfig().getInt("shield.honeypot.threshold", 2),
+                        getConfig().getLong("shield.honeypot.window-minutes", 1440L) * 60_000L), this);
+            }
         }
 
         indexer = new ShieldIndexer(this, hiddenIndex,
                 getConfig().getInt("shield.sweep-radius-chunks", 4),
                 getConfig().getDouble("shield.hide-beyond-blocks", 48.0),
-                readProtectedTypes());
+                readProtectedTypes(), testMode);
         getServer().getPluginManager().registerEvents(indexer, this);
         getServer().getScheduler().runTask(this, indexer::indexLoadedChunks);
 
@@ -79,9 +89,9 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
 
         long deliverTicks = Math.max(1L, getConfig().getLong("shield.deliver-interval-ticks", 5L));
         getServer().getScheduler().runTaskTimer(this, indexer::sweep, deliverTicks, deliverTicks);
+        getServer().getScheduler().runTaskTimer(this, indexer::lookSoon, 1L, 1L);
 
-        entityShield = new EntityShield(this, shield, hiddenIndex,
-                getConfig().getBoolean("shield.test-mode", false),
+        entityShield = new EntityShield(this, shield, hiddenIndex, testMode,
                 readProtectedEntities(),
                 getConfig().getDouble("shield.entity-check-radius", 96.0),
                 getConfig().getInt("shield.entity-rays-per-sweep", 64));
@@ -124,12 +134,16 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
         if (testers.contains(event.getPlayer().getUniqueId())) {
             applyTestPermission(event.getPlayer());
         }
+        if (bypassers.contains(event.getPlayer().getUniqueId())) {
+            applyBypassPermission(event.getPlayer());
+        }
     }
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         reachCheck.forget(event.getPlayer());
         testAttachments.remove(event.getPlayer().getUniqueId());
+        bypassAttachments.remove(event.getPlayer().getUniqueId());
         // The tester's choice survives; only the attachment goes.
         corrector.forget(event.getPlayer());
         indexer.forget(event.getPlayer());
@@ -150,6 +164,7 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
             player.sendMessage("§7/outofsight hidechest §8- place a buried chest (base finding test)");
             player.sendMessage("§7/outofsight shield §8- toggle the buried block entity shield");
             player.sendMessage("§7/outofsight testme §8- shield yourself only, for testing");
+            player.sendMessage("§7/outofsight bypass §8- see every container yourself, for staff");
             player.sendMessage("§7/outofsight advise §8- check Paper's anti-xray and seed settings");
             return true;
         }
@@ -187,6 +202,7 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
                 getLogger().info("[perf] reset");
             }
             case "testme" -> toggleTestPermission(player);
+            case "bypass" -> toggleBypass(player);
             case "advise" -> {
                 var findings = new ConfigAdvisor(this).check(shield.isEnabled());
                 if (findings.isEmpty()) {
@@ -219,6 +235,20 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
             default -> player.sendMessage("§cUnknown subcommand: " + args[0]);
         }
         return true;
+    }
+
+    private static final java.util.List<String> SUBCOMMANDS = java.util.List.of(
+            "shield", "testme", "bypass", "advise", "xray", "hidechest",
+            "reachdebug", "reachsim", "stress", "perf", "perfreset");
+
+    @Override
+    public java.util.List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
+                                                @NotNull String alias, String @NotNull [] args) {
+        if (args.length != 1) {
+            return java.util.List.of();
+        }
+        String prefix = args[0].toLowerCase(java.util.Locale.ROOT);
+        return SUBCOMMANDS.stream().filter(s -> s.startsWith(prefix)).toList();
     }
 
     /**
@@ -375,6 +405,76 @@ public final class OutOfSightPlugin extends JavaPlugin implements Listener {
     private void applyTestPermission(Player player) {
         testAttachments.computeIfAbsent(player.getUniqueId(), k -> player.addAttachment(this,
                 io.github.tunaseckin.outofsight.shield.ShieldIndexer.SHIELDED_PERMISSION, true));
+    }
+
+    /** Attachments granting the bypass permission, one per online player. */
+    private final java.util.Map<java.util.UUID, org.bukkit.permissions.PermissionAttachment>
+            bypassAttachments = new java.util.HashMap<>();
+
+    /**
+     * Staff who turned on bypass with {@code /outofsight bypass}, saved to disk.
+     *
+     * <p>Unlike testing, bypass is how a moderator works every day, so it has to
+     * survive a restart. A server with a permissions plugin can grant
+     * {@code outofsight.bypass} there instead and never use this.
+     */
+    private final java.util.Set<java.util.UUID> bypassers = new java.util.HashSet<>();
+
+    private java.io.File bypassFile() {
+        return new java.io.File(getDataFolder(), "bypass.txt");
+    }
+
+    private void loadBypassers() {
+        java.io.File file = bypassFile();
+        if (!file.isFile()) {
+            return;
+        }
+        try {
+            for (String line : java.nio.file.Files.readAllLines(file.toPath())) {
+                String trimmed = line.trim();
+                if (!trimmed.isEmpty() && !trimmed.startsWith("#")) {
+                    bypassers.add(java.util.UUID.fromString(trimmed));
+                }
+            }
+        } catch (java.io.IOException | IllegalArgumentException e) {
+            getLogger().warning("Could not read bypass.txt: " + e.getMessage());
+        }
+    }
+
+    private void saveBypassers() {
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        lines.add("# Players who turned on /outofsight bypass. One UUID per line.");
+        for (java.util.UUID id : bypassers) {
+            lines.add(id.toString());
+        }
+        try {
+            getDataFolder().mkdirs();
+            java.nio.file.Files.write(bypassFile().toPath(), lines);
+        } catch (java.io.IOException e) {
+            getLogger().warning("Could not save bypass.txt: " + e.getMessage());
+        }
+    }
+
+    /** Lets the caller see every container, for moderating without a permissions plugin. */
+    private void toggleBypass(Player player) {
+        if (bypassers.remove(player.getUniqueId())) {
+            var existing = bypassAttachments.remove(player.getUniqueId());
+            if (existing != null) {
+                player.removeAttachment(existing);
+            }
+            saveBypassers();
+            player.sendMessage("§7Bypass off. The shield applies to you again from your next relog.");
+            return;
+        }
+        bypassers.add(player.getUniqueId());
+        applyBypassPermission(player);
+        saveBypassers();
+        player.sendMessage("§aBypass on. §7Relog to receive the containers already hidden from you.");
+    }
+
+    private void applyBypassPermission(Player player) {
+        bypassAttachments.computeIfAbsent(player.getUniqueId(), k -> player.addAttachment(this,
+                io.github.tunaseckin.outofsight.shield.ShieldIndexer.BYPASS_PERMISSION, true));
     }
 
     /** Reads block names from config, warning about unrecognised ones. */

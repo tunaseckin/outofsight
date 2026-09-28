@@ -12,6 +12,10 @@ shield:
   # should not mean switching it on for all your players at once.
   test-mode: false
 
+  # Worlds the shield leaves alone, by name. Lobbies, minigame arenas and
+  # adventure maps where every chest is meant to be found can go here.
+  disabled-worlds: []
+
   # Containers farther than this from a player are left out of the chunk packet
   # and delivered once that player comes closer. Base finding scans at render
   # distance, so this is where it loses. Vanilla clients do not draw block
@@ -95,6 +99,17 @@ shield:
   # Registry id of the chest block entity. -1 learns it from live packets.
   # Version specific; set it manually if automatic learning fails.
   decoy-block-entity-type: -1
+
+  # Staff alerts when a player digs into the exact spot where a decoy chest was
+  # shown. Decoys are only visible to cheats, so that is a strong hint, but a
+  # player strip mining a lot of stone can hit one by chance. The plugin only
+  # alerts holders of outofsight.alerts and the console; it never punishes.
+  # Needs decoys-per-chunk above 0.
+  honeypot:
+    enabled: true
+    # Hits within the window before an alert goes out.
+    threshold: 2
+    window-minutes: 1440
 
   # How often a chunk carries decoys. Sparse decoys poison a cheat's data just
   # as well, and the real cost is re-serialising every packet you touch.

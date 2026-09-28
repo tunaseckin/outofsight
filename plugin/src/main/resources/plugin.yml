@@ -9,7 +9,7 @@ website: https://github.com/tunaseckin/outofsight
 commands:
   outofsight:
     description: OutOfSight administration
-    usage: /outofsight <xray|shield|testme|advise|hidechest|reachdebug|reachsim|stress|perf>
+    usage: /outofsight <shield|testme|bypass|advise|xray|hidechest|reachdebug|reachsim|stress|perf|perfreset>
     permission: outofsight.admin
     aliases: [oos]
 permissions:
@@ -17,4 +17,10 @@ permissions:
     default: op
   outofsight.shielded:
     description: While shield.test-mode is on, the shield applies only to holders
+    default: false
+  outofsight.alerts:
+    description: Receives decoy honeypot alerts
+    default: op
+  outofsight.bypass:
+    description: Sees every container and storage vehicle, whatever the shield says
     default: false

@@ -47,9 +47,6 @@ public final class BlockEntityShield extends PacketListenerAbstract {
     /** Toggleable for A/B testing; off by default. */
     private volatile boolean enabled;
 
-    /** When on, only players holding {@code outofsight.shielded} are affected. */
-    private final boolean testMode;
-
     // Measurement: the shield runs on network threads, so this time shows up as
     // latency rather than TPS. Main-thread cost is measured in the sweep.
     private final java.util.concurrent.atomic.AtomicLong packets =
@@ -78,12 +75,11 @@ public final class BlockEntityShield extends PacketListenerAbstract {
     }
 
     public BlockEntityShield(Plugin plugin, HiddenIndex index,
-                             DecoyService decoys, boolean testMode) {
+                             DecoyService decoys) {
         super(PacketListenerPriority.HIGH);
         this.plugin = plugin;
         this.index = index;
         this.decoys = decoys;
-        this.testMode = testMode;
     }
 
     public boolean toggle() {
@@ -100,11 +96,9 @@ public final class BlockEntityShield extends PacketListenerAbstract {
         if (!enabled || event.getPacketType() != PacketType.Play.Server.CHUNK_DATA) {
             return;
         }
-        if (testMode) {
-            java.util.UUID viewer = event.getUser().getUUID();
-            if (viewer == null || !index.isShielded(viewer)) {
-                return; // Test mode: this player sees vanilla behaviour.
-            }
+        UUID viewer = event.getUser().getUUID();
+        if (viewer != null && !index.isShielded(viewer)) {
+            return; // Bypass permission, or not covered by test mode.
         }
         long started = System.nanoTime();
         packets.incrementAndGet();
@@ -121,6 +115,9 @@ public final class BlockEntityShield extends PacketListenerAbstract {
         // but 0 in the Nether and the End: reading it once at startup put every
         // edit in those dimensions four sections off.
         World world = worldOf(event);
+        if (!index.isWorldShielded(world.getName())) {
+            return;
+        }
         UUID worldId = world.getUID();
         int minY = world.getMinHeight();
 
@@ -172,6 +169,11 @@ public final class BlockEntityShield extends PacketListenerAbstract {
                 continue;
             }
             toHide.add(new int[]{lx, y, lz});
+            // Sealed in stone it cannot be seen, so there is nothing to check.
+            UUID viewer = event.getUser().getUUID();
+            if (viewer != null && !index.isEnclosed(worldId, baseX + lx, y, baseZ + lz)) {
+                index.requestLook(viewer, worldId, HiddenIndex.posKey(baseX + lx, y, baseZ + lz));
+            }
         }
 
         List<int[]> toPlant = planDecoys(sections, minY, column.getX(), column.getZ());
@@ -187,6 +189,7 @@ public final class BlockEntityShield extends PacketListenerAbstract {
             }
         }
         for (int[] pos : toPlant) {
+            decoys.recordPlanted(worldId, HiddenIndex.posKey(baseX + pos[0], pos[1], baseZ + pos[2]));
             setState(sections, minY, pos[0], pos[1], pos[2],
                     WrappedBlockState.getDefaultState(StateTypes.CHEST));
             keep.add(new TileEntity((byte) (((pos[0] & 0xF) << 4) | (pos[2] & 0xF)),
@@ -235,43 +238,24 @@ public final class BlockEntityShield extends PacketListenerAbstract {
     }
 
     /**
-     * Picks valid positions for decoys.
+     * Picks valid positions for decoys, judged from the packet itself.
      *
      * <p>A candidate is used only if it sits in a fully buried solid block: an
      * exposed decoy would be visible to legitimate players too, which breaks the
      * asymmetry the defence rests on.
      */
     private List<int[]> planDecoys(BaseChunk[] sections, int minY, int chunkX, int chunkZ) {
-        if (!decoys.ready() || !decoys.carriesDecoys(chunkX, chunkZ)) {
+        if (!decoys.ready()) {
             return List.of();
         }
-        List<int[]> chosen = new ArrayList<>(decoys.perChunk());
-        for (int[] candidate : decoys.candidates(chunkX, chunkZ, minY, 60)) {
-            if (chosen.size() >= decoys.perChunk()) {
-                break;
-            }
-            if (buriedSolid(sections, minY, candidate[0], candidate[1], candidate[2])) {
-                chosen.add(candidate);
-            }
-        }
-        return chosen;
-    }
-
-    /** Is the position and all six neighbours solid? Read from the packet itself. */
-    private boolean buriedSolid(BaseChunk[] sections, int minY, int lx, int y, int lz) {
-        int[][] offsets = {{0, 0, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 1, 0},
-                {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
-        for (int[] o : offsets) {
-            WrappedBlockState state = stateAt(sections, minY, lx + o[0], y + o[1], lz + o[2]);
+        return decoys.plant(chunkX, chunkZ, minY, (lx, y, lz) -> {
+            WrappedBlockState state = stateAt(sections, minY, lx, y, lz);
             if (state == null) {
                 return false;
             }
             var type = state.getType();
-            if (type.isAir() || !type.isSolid() || !type.isBlocking()) {
-                return false;
-            }
-        }
-        return true;
+            return !type.isAir() && type.isSolid() && type.isBlocking();
+        });
     }
 
     /** Replacement block: the neighbour above, matching the surrounding stone. */

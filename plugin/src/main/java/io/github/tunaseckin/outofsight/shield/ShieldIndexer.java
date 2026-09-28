@@ -47,9 +47,21 @@ public final class ShieldIndexer implements Listener {
     /** Held by players the shield applies to while test mode is on. */
     public static final String SHIELDED_PERMISSION = "outofsight.shielded";
 
+    /** Held by staff who should see every container, shield or not. */
+    public static final String BYPASS_PERMISSION = "outofsight.bypass";
+
+    /** Whether the shield applies to this player, before looking at the world. */
+    public static boolean covers(Player player, boolean testMode) {
+        if (player.hasPermission(BYPASS_PERMISSION)) {
+            return false;
+        }
+        return !testMode || player.hasPermission(SHIELDED_PERMISSION);
+    }
+
     private final Plugin plugin;
     private final HiddenIndex index;
     private final int sweepRadius;
+    private final boolean testMode;
 
     /**
      * Block types to hide. A base is not only chests: a furnace, a hopper or a
@@ -90,9 +102,11 @@ public final class ShieldIndexer implements Listener {
             new java.util.concurrent.atomic.AtomicLong();
 
     public ShieldIndexer(Plugin plugin, HiddenIndex index, int sweepRadius,
-                         double hideBeyond, Set<org.bukkit.Material> protectedTypes) {
+                         double hideBeyond, Set<org.bukkit.Material> protectedTypes,
+                         boolean testMode) {
         this.plugin = plugin;
         this.index = index;
+        this.testMode = testMode;
         this.sweepRadius = sweepRadius;
         this.hideBeyond = hideBeyond;
         this.hideBeyondSq = (long) (hideBeyond * hideBeyond);
@@ -132,12 +146,12 @@ public final class ShieldIndexer implements Listener {
      * Records the permission before the first chunk goes out.
      *
      * <p>The sweep would catch up a fraction of a second later, but the first
-     * chunk burst is exactly the part an admin is testing.
+     * chunk burst is exactly the part an admin is testing. LOW, so it runs after
+     * the LOWEST handler that grants {@code /outofsight testme}'s permission.
      */
-    @EventHandler(priority = EventPriority.LOWEST)
+    @EventHandler(priority = EventPriority.LOW)
     public void onJoin(org.bukkit.event.player.PlayerJoinEvent event) {
-        index.setShielded(event.getPlayer().getUniqueId(),
-                event.getPlayer().hasPermission(SHIELDED_PERMISSION));
+        index.setShielded(event.getPlayer().getUniqueId(), covers(event.getPlayer(), testMode));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -304,6 +318,49 @@ public final class ShieldIndexer implements Listener {
         }
     }
 
+    /** Most queued looks handled per tick, so a large burst cannot stall one. */
+    private static final int LOOKS_PER_TICK = 256;
+
+    /**
+     * Checks containers a chunk packet just withheld. Runs every tick.
+     *
+     * <p>This sends what the player can see without recording it as delivered.
+     * The block update can overtake the chunk packet it belongs to, and the
+     * client then drops it; recording it would leave that chest invisible. So the
+     * player's next sweep is forced to run, and the sweep does the bookkeeping.
+     */
+    public void lookSoon() {
+        for (int i = 0; i < LOOKS_PER_TICK; i++) {
+            HiddenIndex.Look look = index.pollLook();
+            if (look == null) {
+                return;
+            }
+            Player player = plugin.getServer().getPlayer(look.player());
+            if (player == null || !player.getWorld().getUID().equals(look.world())) {
+                continue;
+            }
+            int x = HiddenIndex.posXOf(look.pos());
+            int y = HiddenIndex.posYOf(look.pos());
+            int z = HiddenIndex.posZOf(look.pos());
+            if (!index.isContainer(look.world(), x, y, z) || index.isEnclosed(look.world(), x, y, z)
+                    || index.isDelivered(look.player(), x, y, z)) {
+                continue;
+            }
+            Location loc = player.getLocation();
+            double distSq = NumberConversions.square(loc.getBlockX() - x)
+                    + NumberConversions.square(loc.getBlockY() - y)
+                    + NumberConversions.square(loc.getBlockZ() - z);
+            if (distSq > hideBeyondSq) {
+                continue;
+            }
+            Block block = player.getWorld().getBlockAt(x, y, z);
+            if (hasLineOfSight(player, block)) {
+                deliver(block, player);
+                lastSweep.remove(look.player());
+            }
+        }
+    }
+
     /**
      * Delivers containers a player has come close enough to see. Runs on the
      * faster timer: walking into a room and waiting for the chests to appear is
@@ -321,7 +378,11 @@ public final class ShieldIndexer implements Listener {
 
     private void doSweep() {
         for (Player player : plugin.getServer().getOnlinePlayers()) {
-            index.setShielded(player.getUniqueId(), player.hasPermission(SHIELDED_PERMISSION));
+            index.setShielded(player.getUniqueId(), covers(player, testMode));
+            if (!index.isShielded(player.getUniqueId())
+                    || !index.isWorldShielded(player.getWorld().getName())) {
+                continue; // Packets to this player are left alone; nothing to deliver.
+            }
             Location eye = player.getEyeLocation();
             long[] state = {
                     HiddenIndex.posKey(eye.getBlockX(), eye.getBlockY(), eye.getBlockZ()),
