@@ -63,14 +63,14 @@ public final class DecoyHoneypot implements Listener {
             return;
         }
         String message = String.format(java.util.Locale.ROOT,
-                "[OutOfSight] %s dug into a decoy chest spot at %d %d %d in %s (%d in the last %d h)."
+                "%s dug into a decoy chest spot at %d %d %d in %s (%d in the last %d h)."
                         + " Decoys are only visible to cheats; a chance hit while strip mining is possible.",
                 player.getName(), block.getX(), block.getY(), block.getZ(), block.getWorld().getName(),
                 count, windowMillis / 3_600_000L);
         plugin.getLogger().warning(message);
         for (Player staff : plugin.getServer().getOnlinePlayers()) {
             if (staff.hasPermission(ALERTS_PERMISSION)) {
-                staff.sendMessage("§c" + message);
+                staff.sendMessage("§c[OutOfSight] " + message);
             }
         }
     }

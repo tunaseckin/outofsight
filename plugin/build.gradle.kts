@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "io.github.tunaseckin"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 
 repositories {
     mavenCentral()

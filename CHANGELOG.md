@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.0-beta.2, unreleased
+
+### Added
+- `outofsight.bypass` exempts staff from the shield and from vehicle hiding.
+  `/outofsight bypass` grants it without a permissions plugin and saves the
+  list to `bypass.txt`.
+- `shield.disabled-worlds` leaves chosen worlds alone.
+- Decoy honeypot: breaking the exact block where a decoy was shown alerts
+  holders of `outofsight.alerts` (default op) and the console, after
+  `shield.honeypot.threshold` hits within `window-minutes`. Alerts only.
+- Tab completion for `/outofsight`.
+
+### Changed
+- A container withheld from a chunk packet is checked on the next tick instead
+  of waiting for the sweep, so chests appear almost at once after a join or a
+  teleport.
+
+### Fixed
+- With test mode on, a player who had just run `/outofsight testme` received
+  their first chunks unshielded after relogging, because the permission was read
+  before it was granted.
+
 ## 0.1.0-beta.1, 2026-09-27
 
 First public build. Checked on a real Paper 1.21.11 server by the end-to-end

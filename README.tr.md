@@ -109,6 +109,16 @@ listesinden de siliyor.
 görüş hattına bağlı olduğu için açıktaki harita duvarları ve dükkan vitrinleri
 etkilenmiyor.
 
+### Kime ve nerede
+
+Yetkililer her şeyi görebiliyor. `outofsight.bypass` izni oyuncuyu hem kalkanın
+hem de araç gizlemenin dışında tutuyor. İzin eklentisi olmayan bir sunucuda
+`/outofsight bypass` bu izni sana veriyor ve listeyi `bypass.txt` dosyasında
+tutuyor, yani yeniden başlatmada kaybolmuyor.
+
+`shield.disabled-worlds` kalkanın dokunmayacağı dünyaları listeliyor: lobi,
+minigame arenası ya da her sandığın bulunmak için konduğu bir macera haritası gibi.
+
 ### Ayar danışmanı
 
 X-ray ve netherite finder'a karşı korumayı Paper'ın anti-xray'i sağlıyor ve o da
@@ -140,6 +150,13 @@ değiştirir, bu da hem titrer hem sunucunun veri uydurduğunu belli eder.
 Tuzaklar dört chunk'ta bire konuyor. Seyrek tuzaklar veriyi aynı ölçüde
 zehirliyor ve maliyetin çoğu dokunduğun her paketi yeniden serialize
 etmekten geliyor. Seyreltme bunu paketlerin %100'ünden %28'ine düşürüyor.
+
+Tuzaklar bal küpü olarak da çalışıyor. Konumları paket gönderilirken kaydediliyor
+ve bir tuzağın durduğu bloğun tam kendisini kıran oyuncu `outofsight.alerts`
+iznine sahip olanlara ve konsola bildiriliyor. Kayıtlı sandık koordinatlarıyla
+gelen bir hileci tam böyle davranıyor. Çok taş kazan bir oyuncu da şans eseri bir
+tuzak noktasına denk gelebilir, o yüzden varsayılan ayar bir gün içinde iki isabet
+istiyor ve eklenti sadece haber veriyor. Banlama kararı bir insana kalıyor.
 
 ### Denetim
 
@@ -215,6 +232,7 @@ Hepsi `outofsight.admin` gerektiriyor (varsayılan olarak op). Kısayol: `/oos`.
 | `/outofsight hidechest` | Gömülü sandık + kontrol cevheri koyar, sonra çık-gir |
 | `/outofsight shield` | Kalkanı açar/kapatır |
 | `/outofsight testme` | Kalkanı sadece kendine uygular, test için |
+| `/outofsight bypass` | Bütün kapları kendin görürsün, yetkililer için |
 | `/outofsight advise` | Paper'ın anti-xray ve seed ayarlarının açık bıraktıklarını raporlar |
 | `/outofsight reachdebug` | Her vuruşun ölçülen mesafesini yazar |
 | `/outofsight reachsim <d>` | Reach eşiğinin nerede olduğunu gösterir |
@@ -256,8 +274,10 @@ kaldı, hiç hata oluşmadı.
   oyunculara gidebiliyorlar.
 - Sandık block entity kayıt numarası canlı paketlerden öğreniliyor. Bu başarısız
   olursa `shield.decoy-block-entity-type` elle verilebilir.
-- Bir kap görüş alanına `deliver-interval-ticks` kadar geç giriyor, varsayılanda
-  saniyenin çeyreği. Sunucunda göze çarpıyorsa düşür.
+- Bir kap, chunk'ı gönderildikten sonraki tick'te kontrol ediliyor. Yani giriş ya
+  da ışınlanma sonrasında bir iki tick içinde görünüyor. Yürürken ise görüş
+  alanına `deliver-interval-ticks` kadar geç girebiliyor, varsayılanda saniyenin
+  çeyreği.
 - Reach kontrolü gerçek bir anticheat'in yerini tutmuyor. Hareket simülasyonu yok,
   dolayısıyla fly, speed ve noslow tespiti de yok.
 - `engine-mode: 2` kendi başına CPU harcıyor. Açmadan önce tick süreni ölç.

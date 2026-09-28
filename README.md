@@ -106,6 +106,16 @@ hiding a player also removes them from the tab list.
 `armor_stand` are worth adding against collectible ESP; since only line of sight
 decides, map walls and shop displays in the open are unaffected.
 
+### Who and where
+
+Staff can see everything. `outofsight.bypass` exempts a player from the shield and
+from vehicle hiding. On a server without a permissions plugin,
+`/outofsight bypass` grants it to yourself and keeps the list in `bypass.txt`, so
+it survives a restart.
+
+`shield.disabled-worlds` lists worlds the shield leaves alone, such as a lobby, a
+minigame arena or an adventure map where every chest is meant to be found.
+
 ### Config advisor
 
 Paper's anti-xray handles X-ray and netherite finders, and it ships switched off. Its default `hidden-blocks` list also has no
@@ -135,6 +145,13 @@ which flickers and signals that the server is fabricating data.
 Decoys go in one chunk in four rather than every chunk. Sparse decoys poison the
 data just as well, and most of the cost is re-serialising every packet you touch.
 Thinning drops that from 100% of packets to 28%.
+
+Decoys also work as a honeypot. Their positions are recorded when the packet goes
+out, and a player who breaks the exact block where one sat is reported to holders
+of `outofsight.alerts` and to the console. That is how a cheat with saved stash
+coordinates behaves. A player strip mining a lot of stone can hit a decoy spot by
+chance, so the default needs two hits within a day, and the plugin only alerts.
+Banning stays a person's decision.
 
 ### Audit
 
@@ -209,6 +226,7 @@ All require `outofsight.admin` (op by default).
 | `/outofsight hidechest` | Place a buried chest + control ore, then relog to test |
 | `/outofsight shield` | Toggle the shield |
 | `/outofsight testme` | Shield yourself only, for testing |
+| `/outofsight bypass` | See every container yourself, for staff |
 | `/outofsight advise` | Report what Paper's anti-xray and seed settings leave open |
 | `/outofsight reachdebug` | Log the measured distance of every hit |
 | `/outofsight reachsim <d>` | Show where the reach threshold sits |
@@ -249,8 +267,9 @@ every run, with no exceptions.
   receive them.
 - Chest-type registry ids are learned from live packets. If that fails, set
   `shield.decoy-block-entity-type` manually.
-- A container comes into view up to `deliver-interval-ticks` late, a quarter of a
-  second by default. Lower it if that is visible on your server.
+- A container is checked on the tick after its chunk is sent, so after a join or
+  a teleport it appears within a tick or two. While walking, it can come into view
+  up to `deliver-interval-ticks` late, a quarter of a second by default.
 - The reach check does not replace a real anticheat. No movement simulation, so no
   fly, speed or noslow detection.
 - `engine-mode: 2` costs CPU on its own. Measure your tick time before enabling it.

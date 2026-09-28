@@ -241,10 +241,14 @@ async function main() {
       !view.spawnedNear('chest_minecart', ...CART_BURIED), JSON.stringify(view.spawns));
   check('chest minecart in plain view: sent',
       view.spawnedNear('chest_minecart', ...CART_OPEN), JSON.stringify(view.spawns));
-  const delay = view.deliveryDelay(...OPEN_NEAR);
+  // Either it was already marked delivered and rode in the chunk packet itself,
+  // or it came afterwards as a block update; then measure how long after.
+  const inChunk = (view.firstEntities.get(`${OPEN_NEAR[0] >> 4},${OPEN_NEAR[2] >> 4}`) ?? [])
+      .some(([x, y, z]) => x === OPEN_NEAR[0] && y === OPEN_NEAR[1] && z === OPEN_NEAR[2]);
+  const delay = inChunk ? 0 : view.deliveryDelay(...OPEN_NEAR);
   check('chest in plain view arrives within a second of its chunk', delay !== null && delay < 1000,
-      `${delay} ms`);
-  console.log(`[e2e] delivery delay for the chest in plain view: ${delay} ms`);
+      inChunk ? 'in the chunk packet' : `${delay} ms after it`);
+  console.log(`[e2e] chest in plain view: ${inChunk ? 'in the chunk packet' : `${delay} ms after its chunk`}`);
 
   // --- honeypot: dig where a decoy was shown, as a cheat with saved coordinates would ---
   const decoySpots = view.firstEntities.get(DECOY_CHUNK.join(',')) ?? [];
